@@ -3060,6 +3060,14 @@
         </div>
         <span id="navLighterCryptoLivePill" class="navLivePill paused">○ AUTO PAUSED</span>
       </button>
+      <button id="navTabLighterMicro" class="mainNavBtn" type="button">
+        <span class="navBtnIcon">≋</span>
+        <div class="navBtnText">
+          <strong>Lighter Order-Flow Lab</strong>
+          <small>Live L2 + Tape · Causal Paper Replay</small>
+        </div>
+        <span id="navLighterMicroLivePill" class="navLivePill paused">○ SHADOW ONLY</span>
+      </button>
       <button id="navTabPairs" class="mainNavBtn" type="button">
         <span class="navBtnIcon">⚖️</span>
         <div class="navBtnText">
@@ -4451,6 +4459,10 @@
     <div id="tabContentLighterCrypto" class="terminal-read-only mainTabLoading" data-loading-message="Loading live account, strategy, and charts…" aria-busy="true" style="display:none;">
     </div><!-- End #tabContentLighterCrypto -->
 
+    <!-- TAB 6: LIGHTER ORDER-BOOK MICROSTRUCTURE LAB -->
+    <div id="tabContentLighterMicro" class="terminal-read-only mainTabLoading" data-lighter-micro-tab data-micro-auto-activate="false" data-loading-message="Loading live order book, account, price chart, and paper replay…" aria-busy="true" style="display:none;">
+    </div><!-- End #tabContentLighterMicro -->
+
     <!-- ======================================================= -->
     <!-- TAB 3: HEDGE-WORTHY PAIRS EXPLORER (CROSS-MARKET ARB)   -->
     <!-- ======================================================= -->
@@ -5436,6 +5448,7 @@
   <script src="lighter-tab.js?v=20261019_chart_fix2"></script>
   <script src="crypto-tab.js?v=20261019_chart_fix2"></script>
   <script src="lighter-crypto-tab.js?v=20261019_chart_fix2"></script>
+  <script src="lighter-micro-tab.js?v=20261125_orderflow_lab"></script>
   <script src="multi-span-tab.js?v=20261124_rsi_strategy"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
@@ -11311,6 +11324,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       lighter: { id: "tabContentLighter", title: "Tab 3", parts: () => [progressPart("Chart + MA", window.lighterEngine?.bars?.length, `${window.lighterEngine?.bars?.length || 0} bars`), progressPart("Account + positions", window.lighterEngine?.liveVenue?.success !== false && window.lighterEngine?.liveVenue, window.lighterEngine?.liveVenue?.error || "", window.lighterEngine?.liveVenue?.success === false), progressPart("Paper replay", window.lighterEngine?.latestReplayConditionResult)] },
       crypto: { id: "tabContentCrypto", title: "Tab 4", parts: () => [progressPart("Chart + MA", window.cryptoEngine?.bars?.length, `${window.cryptoEngine?.bars?.length || 0} bars`), progressPart("Account + positions", window.cryptoEngine?.liveVenue?.success !== false && window.cryptoEngine?.liveVenue, window.cryptoEngine?.liveVenue?.error || "", window.cryptoEngine?.liveVenue?.success === false), progressPart("Bot + realized P&L", window.cryptoEngine?.botState), window.TerminalCommon.replayProgressPart(window.cryptoEngine)] },
       lightercrypto: { id: "tabContentLighterCrypto", title: "Tab 5", parts: () => [progressPart("Chart + MA", window.lighterCryptoEngine?.bars?.length, `${window.lighterCryptoEngine?.bars?.length || 0} bars`), progressPart("Account + positions", window.lighterCryptoEngine?.liveVenue?.success, window.lighterCryptoEngine?.liveVenue?.error || "", window.lighterCryptoEngine?.liveVenue?.success === false), progressPart("Bot + realized P&L", window.lighterCryptoEngine?.botState), window.TerminalCommon.replayProgressPart(window.lighterCryptoEngine)] },
+      lightermicro: { id: "tabContentLighterMicro", title: "Order-Flow Lab", parts: () => [progressPart("Price + MA", window.lighterMicroEngine?.bars?.length, `${window.lighterMicroEngine?.bars?.length || 0} bars`), progressPart("Account + positions", window.lighterMicroEngine?.account?.success === true && window.lighterMicroEngine?.account?.authenticated === true, window.lighterMicroEngine?.errors?.account || window.lighterMicroEngine?.account?.error || "", Boolean(window.lighterMicroEngine?.errors?.account)), progressPart("Live L2 + tape", window.lighterMicroEngine?.snapshot?.stale === false && Boolean(window.lighterMicroEngine?.snapshot?.order_book?.bids?.length), window.lighterMicroEngine?.errors?.snapshot || "", Boolean(window.lighterMicroEngine?.errors?.snapshot)), progressPart("Causal paper replay", window.lighterMicroEngine?.replay && window.lighterMicroEngine?.replay?.stale !== true, window.lighterMicroEngine?.errors?.replay || "", Boolean(window.lighterMicroEngine?.errors?.replay))] },
       pairs: { id: "tabContentPairs", ready: () => Boolean(pairsExplorer?.pairs?.some((pair) => Number(pair.priceA) > 0 && Number(pair.priceB) > 0)) },
       compound: { id: "tabContentCompound", ready: () => Boolean(compoundingEngine?.chart && compoundingEngine?.wealthSeries) },
       strategylab: { id: "tabContentStrategyLab", ready: () => Boolean(window.strategyLab?.loaded && window.strategyLab?.data?.bars?.length) },
@@ -11404,6 +11418,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       const isLighter = normalized === "lighter";
       const isCrypto = normalized === "crypto";
       const isLighterCrypto = normalized === "lightercrypto";
+      const isLighterMicro = normalized === "lightermicro";
       const isPairs = normalized === "pairs";
       const isCompound = normalized === "compound";
       const isStrategyLab = normalized === "strategylab";
@@ -11414,6 +11429,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("navTabLighter")) $("navTabLighter").classList.toggle("active", isLighter);
       if ($("navTabCrypto")) $("navTabCrypto").classList.toggle("active", isCrypto);
       if ($("navTabLighterCrypto")) $("navTabLighterCrypto").classList.toggle("active", isLighterCrypto);
+      if ($("navTabLighterMicro")) $("navTabLighterMicro").classList.toggle("active", isLighterMicro);
       if ($("navTabPairs")) $("navTabPairs").classList.toggle("active", isPairs);
       if ($("navTabCompound")) $("navTabCompound").classList.toggle("active", isCompound);
       if ($("navTabStrategyLab")) $("navTabStrategyLab").classList.toggle("active", isStrategyLab);
@@ -11424,6 +11440,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("tabContentLighter")) $("tabContentLighter").style.display = isLighter ? "block" : "none";
       if ($("tabContentCrypto")) $("tabContentCrypto").style.display = isCrypto ? "block" : "none";
       if ($("tabContentLighterCrypto")) $("tabContentLighterCrypto").style.display = isLighterCrypto ? "block" : "none";
+      if ($("tabContentLighterMicro")) $("tabContentLighterMicro").style.display = isLighterMicro ? "block" : "none";
       if ($("tabContentPairs")) $("tabContentPairs").style.display = isPairs ? "block" : "none";
       if ($("tabContentCompound")) $("tabContentCompound").style.display = isCompound ? "block" : "none";
       if ($("tabContentStrategyLab")) $("tabContentStrategyLab").style.display = isStrategyLab ? "block" : "none";
@@ -11434,6 +11451,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         : isLighter ? $("navTabLighter")
         : isCrypto ? $("navTabCrypto")
         : isLighterCrypto ? $("navTabLighterCrypto")
+        : isLighterMicro ? $("navTabLighterMicro")
         : isPairs ? $("navTabPairs")
         : isCompound ? $("navTabCompound")
         : isStrategyLab ? $("navTabStrategyLab")
@@ -11500,6 +11518,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         activateEngineWhenReady(() => window.lighterEngine, isLighter, "tabContentLighter");
         activateEngineWhenReady(() => window.cryptoEngine, isCrypto, "tabContentCrypto");
         activateEngineWhenReady(() => window.lighterCryptoEngine, isLighterCrypto, "tabContentLighterCrypto");
+        activateEngineWhenReady(() => window.lighterMicroEngine, isLighterMicro, "tabContentLighterMicro");
+        if (!isLighterMicro) window.lighterMicroEngine?.onTabDeactivated?.();
         if (typeof pairsExplorer !== "undefined" && isPairs) {
           pairsExplorer.onTabActivated();
         }
@@ -11521,6 +11541,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     if ($("navTabLighter")) $("navTabLighter").addEventListener("click", () => switchMainTab("lighter"));
     if ($("navTabCrypto")) $("navTabCrypto").addEventListener("click", () => switchMainTab("crypto"));
     if ($("navTabLighterCrypto")) $("navTabLighterCrypto").addEventListener("click", () => switchMainTab("lighterCrypto"));
+    if ($("navTabLighterMicro")) $("navTabLighterMicro").addEventListener("click", () => switchMainTab("lighterMicro"));
     if ($("navTabPairs")) $("navTabPairs").addEventListener("click", () => switchMainTab("pairs"));
     if ($("navTabCompound")) $("navTabCompound").addEventListener("click", () => switchMainTab("compound"));
     if ($("navTabStrategyLab")) $("navTabStrategyLab").addEventListener("click", () => switchMainTab("strategyLab"));
@@ -11530,7 +11551,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     // Restore saved tab on load
     try {
       const savedTab = localStorage.getItem("skhynix_active_tab");
-      if (savedTab === "trading" || savedTab === "lighter" || savedTab === "crypto" || savedTab === "lighterCrypto" || savedTab === "backtest" || savedTab === "pairs" || savedTab === "compound" || savedTab === "strategyLab" || savedTab === "upbitScanner" || savedTab === "multiSpan") {
+      if (savedTab === "trading" || savedTab === "lighter" || savedTab === "crypto" || savedTab === "lighterCrypto" || savedTab === "lighterMicro" || savedTab === "backtest" || savedTab === "pairs" || savedTab === "compound" || savedTab === "strategyLab" || savedTab === "upbitScanner" || savedTab === "multiSpan") {
         switchMainTab(savedTab);
       }
     } catch (e) {}
@@ -11818,6 +11839,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (cryptoTab) cryptoTab.classList.toggle("terminal-read-only", locked);
         const lighterCryptoTab = $("tabContentLighterCrypto");
         if (lighterCryptoTab) lighterCryptoTab.classList.toggle("terminal-read-only", locked);
+        const lighterMicroTab = $("tabContentLighterMicro");
+        if (lighterMicroTab) lighterMicroTab.classList.toggle("terminal-read-only", locked);
 
         const banner = $("terminalLockBanner");
         const bannerText = $("lblTerminalLockBannerText");
@@ -11861,7 +11884,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         window.strategyLab?.applyExecutionLock();
 
         // Apply disabled state to action controls
-        const actionControls = document.querySelectorAll("#tabContentTrading .terminal-action-control, #tabContentLighter .terminal-action-control, #tabContentCrypto .terminal-action-control, #tabContentLighterCrypto .terminal-action-control");
+        const actionControls = document.querySelectorAll("#tabContentTrading .terminal-action-control, #tabContentLighter .terminal-action-control, #tabContentCrypto .terminal-action-control, #tabContentLighterCrypto .terminal-action-control, #tabContentLighterMicro .terminal-action-control");
         actionControls.forEach(ctrl => {
           const updateElem = (el) => {
             if (el.dataset.terminalUnavailable === "true") {
@@ -11887,6 +11910,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         window.lighterEngine?.applyExecutionLock?.();
         window.cryptoEngine?.applyExecutionLock?.();
         window.lighterCryptoEngine?.applyExecutionLock?.();
+        window.lighterMicroEngine?.syncLiveControlAccess?.();
       }
     };
     window.terminalLockManager = terminalLockManager;

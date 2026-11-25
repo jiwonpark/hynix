@@ -9,10 +9,12 @@ const tabIds = [
   "tabContentLighter",
   "tabContentCrypto",
   "tabContentLighterCrypto",
+  "tabContentLighterMicro",
   "tabContentPairs",
   "tabContentCompound",
   "tabContentStrategyLab",
   "tabContentUpbitScanner",
+  "tabContentMultiSpan",
 ];
 
 for (const id of tabIds) {
@@ -22,16 +24,18 @@ for (const id of tabIds) {
   assert.match(tag, /aria-busy="true"/, `${id} must expose its initial busy state`);
 }
 
-assert.match(html, /\.mainTabLoading > \* \{\s*visibility: hidden !important;/,
-  "unverified placeholders must stay hidden behind the loading gate");
+assert.doesNotMatch(html, /\.mainTabLoading > \* \{[\s\S]*?visibility: hidden !important;/,
+  "loaded sections must remain usable while another component is still pending");
+assert.match(html, /\[id\^="tabContent"\]\.mainTabLoading > \.mainTabProgress \{ display: flex; \}/,
+  "pending tabs must show component-level progressive loading evidence");
 assert.match(html, /function beginMainTabLoading\(tab\)/,
   "tab activation must start a readiness check");
 assert.match(html, /beginMainTabLoading\(normalized\);/,
   "every navigation path must use the shared loading gate");
 assert.match(html, /container\.setAttribute\("aria-busy", ready \? "false" : "true"\)/,
   "the loading gate must publish its resolved state");
-assert.match(html, /Still loading live data… The terminal will keep retrying\./,
-  "slow tabs must retain an explicit bounded loading message");
+assert.match(html, /Still waiting for the remaining live data\. Loaded sections stay usable; retries continue automatically\./,
+  "slow tabs must disclose that loaded components remain usable while retries continue");
 assert.match(html, /container\._mainTabLoadingTimer = timer;/,
   "slow tabs must keep watching for late data instead of becoming permanently blocked");
 

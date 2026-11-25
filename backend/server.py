@@ -53,6 +53,7 @@ from .crypto_bot import CryptoBot
 from .lighter_client import LighterClient
 from .lighter_crypto_bot import LighterCryptoBot, MARKETS as LIGHTER_CRYPTO_MARKETS
 from .lighter_bot import LighterPairBot
+from .lighter_micro_runtime import LighterMicroRuntime
 from .lighter_strategy import (
     _macro_trend_aligned,
     hourly_macro_alignment,
@@ -212,6 +213,7 @@ upbit_client = UpbitClient()
 lighter_client = LighterClient()
 lighter_pair_bot = LighterPairBot(lighter_client)
 lighter_crypto_bot = LighterCryptoBot(lighter_client)
+lighter_micro_runtime = LighterMicroRuntime(lighter_client)
 _crypto_history_task: Optional[asyncio.Task] = None
 _crypto_history_cache: Optional[Dict[str, Any]] = None
 _crypto_history_cache_time = 0.0
@@ -219,6 +221,406 @@ _lighter_crypto_history_task: Optional[asyncio.Task] = None
 _lighter_crypto_history_cache: Optional[Dict[str, Any]] = None
 _lighter_crypto_history_cache_time = 0.0
 _lighter_account_refresh_task: Optional[asyncio.Task] = None
+
+LIGHTER_MICRO_MAX_ACCOUNT_GROSS_LEVERAGE = 2.0
+LIGHTER_MICRO_SNAPSHOT_DEPTH = 20
+LIGHTER_MICRO_MANDATORY_PREREQUISITE_KEYS = {"entry_direction"}
+LIGHTER_MICRO_CONDITION_SPECS = (
+    {"key": "entry_max_spread", "label": "Maximum spread", "section": "entry",
+     "enabled_field": "use_max_spread", "threshold_field": "max_spread_bps",
+     "min": 0.0, "max": 100.0, "step": 0.1, "unit": "bps"},
+    {"key": "entry_depth_imbalance", "label": "Top-N depth imbalance", "section": "entry",
+     "enabled_field": "use_depth_imbalance", "threshold_field": "min_depth_imbalance",
+     "min": 0.0, "max": 1.0, "step": 0.01, "unit": "ratio"},
+    {"key": "entry_microprice_displacement", "label": "Microprice displacement", "section": "entry",
+     "enabled_field": "use_microprice_displacement", "threshold_field": "min_microprice_displacement_bps",
+     "min": 0.0, "max": 100.0, "step": 0.05, "unit": "bps"},
+    {"key": "entry_trade_flow", "label": "Aggressor trade-flow imbalance", "section": "entry",
+     "enabled_field": "use_trade_flow", "threshold_field": "min_trade_flow_imbalance",
+     "min": 0.0, "max": 1.0, "step": 0.01, "unit": "ratio"},
+    {"key": "entry_price_momentum", "label": "Short-horizon price momentum", "section": "entry",
+     "enabled_field": "use_price_momentum", "threshold_field": "min_price_momentum_bps",
+     "min": 0.0, "max": 100.0, "step": 0.05, "unit": "bps"},
+    {"key": "entry_min_expected_edge", "label": "Minimum expected net edge", "section": "entry",
+     "enabled_field": "use_min_expected_edge", "threshold_field": "min_expected_edge_bps",
+     "min": 0.0, "max": 500.0, "step": 0.05, "unit": "bps"},
+    {"key": "exit_take_profit", "label": "Take profit", "section": "exit",
+     "enabled_field": "use_take_profit", "threshold_field": "take_profit_bps",
+     "min": 0.0, "max": 1000.0, "step": 0.1, "unit": "bps"},
+    {"key": "exit_stop_loss", "label": "Stop loss", "section": "exit",
+     "enabled_field": "use_stop_loss", "threshold_field": "stop_loss_bps",
+     "min": 0.0, "max": 1000.0, "step": 0.1, "unit": "bps"},
+    {"key": "exit_max_holding_time", "label": "Maximum holding time", "section": "exit",
+     "enabled_field": "use_max_holding_time", "threshold_field": "max_holding_ms",
+     "min": 1, "max": 600_000, "step": 100, "unit": "ms"},
+    {"key": "exit_signal_reversal", "label": "Signal reversal", "section": "exit",
+     "enabled_field": "use_signal_reversal", "threshold_field": "reversal_expected_move_bps",
+     "min": 0.0, "max": 500.0, "step": 0.05, "unit": "bps_against_position"},
+)
+
+
+def _lighter_micro_fixed_assumptions(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Describe non-editable evaluator and paper settings without fake controls."""
+    entry = config["entry"]
+    exit_config = config["exit"]
+    runtime = config["runtime"]
+
+    def item(
+        key: str, label: str, value: Any, unit: Optional[str] = None,
+        detail: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        row = {"key": key, "label": label, "value": value}
+        if unit:
+            row["unit"] = unit
+        if detail:
+            row["detail"] = detail
+        return row
+
+    entry_fixed_cost = (
+        2.0 * float(entry["taker_fee_bps_per_side"])
+        + 2.0 * float(entry["slippage_bps_per_side"])
+        + float(entry["extra_round_trip_cost_bps"])
+    )
+    return {
+        "editable": False,
+        "source": "LIGHTER_MICRO_RUNTIME_CONFIG",
+        "groups": [
+            {
+                "key": "entry_model",
+                "label": "Fixed entry-model assumptions",
+                "items": [
+                    item("depth_levels", "Depth imbalance levels per side",
+                         entry["depth_levels"], "levels"),
+                    item("trade_flow_lookback_ms", "Aggressor trade-flow lookback",
+                         entry["trade_flow_lookback_ms"], "ms"),
+                    item("momentum_lookback_ms", "Price-momentum lookback",
+                         entry["momentum_lookback_ms"], "ms"),
+                    item("microprice_edge_weight", "Microprice displacement edge weight",
+                         1.0, "×"),
+                    item("depth_imbalance_edge_scale_bps", "Depth-imbalance edge scale",
+                         entry["depth_imbalance_edge_scale_bps"], "bps / ratio"),
+                    item("trade_flow_edge_scale_bps", "Trade-flow edge scale",
+                         entry["trade_flow_edge_scale_bps"], "bps / ratio"),
+                    item("price_momentum_weight", "Price-momentum edge weight",
+                         entry["price_momentum_weight"], "×"),
+                ],
+            },
+            {
+                "key": "cost_model",
+                "label": "Fixed research cost assumptions",
+                "items": [
+                    item("observed_spread", "Observed spread component", "dynamic", None,
+                         "The current measured spread is added to every entry round trip"),
+                    item("taker_fee_bps_per_side", "Entry taker fee per side",
+                         entry["taker_fee_bps_per_side"], "bps"),
+                    item("slippage_bps_per_side", "Entry slippage per side",
+                         entry["slippage_bps_per_side"], "bps"),
+                    item("extra_round_trip_cost_bps", "Extra entry round-trip cost",
+                         entry["extra_round_trip_cost_bps"], "bps"),
+                    item("fixed_entry_round_trip_cost_bps",
+                         "Fixed entry round-trip cost before spread",
+                         entry_fixed_cost, "bps"),
+                    item("exit_fee_bps", "Paper exit fee", exit_config["exit_fee_bps"], "bps"),
+                    item("exit_slippage_bps", "Paper exit slippage",
+                         exit_config["exit_slippage_bps"], "bps"),
+                    item("funding", "Funding cost", "excluded", None,
+                         "Funding is not included in the research edge or paper P&L"),
+                ],
+            },
+            {
+                "key": "paper_runtime",
+                "label": "Fixed paper-runtime settings",
+                "items": [
+                    item("paper_enabled", "Paper fills enabled", runtime["paper_enabled"]),
+                    item("paper_order_notional_usd", "Paper order notional",
+                         runtime["paper_order_notional_usd"], "USD"),
+                    item("paper_max_open_positions", "Maximum paper positions",
+                         runtime["paper_max_open_positions"], "positions"),
+                    item("paper_max_slippage_bps", "Paper IOC slippage bound",
+                         runtime["paper_max_slippage_bps"], "bps"),
+                    item("paper_taker_fee_bps", "Paper fill taker fee",
+                         runtime["paper_taker_fee_bps"], "bps"),
+                    item("paper_initial_equity_usd", "Paper initial equity",
+                         runtime["paper_initial_equity_usd"], "USD"),
+                    item("symbol", "Recorded instrument", runtime["symbol"]),
+                    item("market_id", "Lighter market id", runtime["market_id"]),
+                    item("book_depth", "Collected order-book depth",
+                         min(int(runtime["book_depth"]), LIGHTER_MICRO_SNAPSHOT_DEPTH),
+                         "levels / side"),
+                    item("max_quote_age_ms", "Maximum accepted quote age",
+                         runtime["max_quote_age_ms"], "ms"),
+                    item("raw_snapshot_history_limit", "In-memory snapshot limit",
+                         runtime["raw_snapshot_history_limit"], "snapshots"),
+                    item("max_trade_prints_per_snapshot", "Maximum retained trades per snapshot",
+                         runtime.get("max_trade_prints_per_snapshot", "unavailable"), "trades"),
+                    item("live_min_recorded_snapshots", "Minimum live-gate sample",
+                         runtime["live_min_recorded_snapshots"], "snapshots"),
+                ],
+            },
+        ],
+    }
+
+
+def _lighter_micro_status_health(
+    state: Dict[str, Any], stream: Dict[str, Any], now_ms: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Return fail-closed evaluator freshness from stream and source state."""
+    current_ms = int(now_ms if now_ms is not None else time.time() * 1000)
+    runtime = (state.get("config") or {}).get("runtime") or {}
+    market_id = int(runtime.get("market_id", 1))
+    max_quote_age_ms = int(runtime.get("max_quote_age_ms", 500))
+    market = ((stream or {}).get("markets") or {}).get(str(market_id)) or {}
+    connected = (stream or {}).get("connected") is True
+    book_valid = market.get("book_valid") is True
+    stream_error = (stream or {}).get("last_error")
+    ladder = state.get("orderbook") or {}
+    metadata = ladder.get("metadata") or {}
+    metadata_ready = metadata.get("feed_ready") is True
+    connection_epoch_valid = (
+        metadata.get("connection_id") is not None
+        and metadata.get("connection_id") == (stream or {}).get("connection_id")
+    )
+    sequence_valid = (
+        ladder.get("sequence") is not None
+        and ladder.get("sequence") == market.get("nonce")
+    )
+
+    try:
+        quote_age_raw = market.get("quote_age_ms")
+        quote_age_ms = (
+            int(quote_age_raw)
+            if not isinstance(quote_age_raw, bool) and quote_age_raw is not None
+            and math.isfinite(float(quote_age_raw)) and float(quote_age_raw) >= 0
+            else None
+        )
+    except (TypeError, ValueError):
+        quote_age_ms = None
+    evaluation = state.get("latest_entry_evaluation") or {}
+    evaluation_valid = (
+        evaluation.get("feed_ready") is not False
+        and metadata_ready
+        and connection_epoch_valid
+        and sequence_valid
+    )
+    source = evaluation.get("source") \
+        or state.get("source") or {}
+    try:
+        timestamp_raw = source.get("timestamp_ms") if isinstance(source, dict) else None
+        timestamp_ms = (
+            int(timestamp_raw)
+            if not isinstance(timestamp_raw, bool) and timestamp_raw is not None
+            and math.isfinite(float(timestamp_raw)) and float(timestamp_raw) > 0
+            else None
+        )
+    except (TypeError, ValueError):
+        timestamp_ms = None
+    evaluation_age_ms = max(0, current_ms - timestamp_ms) if timestamp_ms else None
+
+    reasons = []
+    if not connected:
+        reasons.append("stream_disconnected")
+    if not book_valid:
+        reasons.append("book_invalid")
+    if stream_error not in (None, ""):
+        reasons.append("stream_error")
+    if not metadata_ready:
+        reasons.append("feed_integrity_unavailable")
+    if not connection_epoch_valid:
+        reasons.append("connection_epoch_mismatch")
+    if not sequence_valid:
+        reasons.append("sequence_mismatch")
+    if not evaluation_valid:
+        reasons.append("evaluation_invalid")
+    if quote_age_ms is None:
+        reasons.append("quote_age_unavailable")
+    elif quote_age_ms > max_quote_age_ms:
+        reasons.append("quote_stale")
+    if timestamp_ms is None:
+        reasons.append("evaluation_unavailable")
+    elif evaluation_age_ms > max_quote_age_ms:
+        reasons.append("evaluation_stale")
+    return {
+        "connected": connected,
+        "book_valid": book_valid,
+        "stream_error": stream_error,
+        "feed_integrity_ready": metadata_ready,
+        "connection_epoch_valid": connection_epoch_valid,
+        "sequence_valid": sequence_valid,
+        "evaluation_valid": evaluation_valid,
+        "data_valid": not reasons,
+        "quote_age_ms": quote_age_ms,
+        "evaluation_timestamp_ms": timestamp_ms,
+        "evaluation_age_ms": evaluation_age_ms,
+        "max_quote_age_ms": max_quote_age_ms,
+        "stale": bool(reasons),
+        "stale_reasons": reasons,
+    }
+
+
+def _lighter_micro_account_facts() -> Dict[str, Any]:
+    """Return read-only account gates without substituting missing values with zero."""
+    snapshot = lighter_client.account_telemetry_snapshot() or {}
+    account = snapshot.get("account") or {}
+    raw_positions = account.get("positions") or []
+    positions = list(raw_positions.values()) if isinstance(raw_positions, dict) else list(raw_positions)
+    updated_at_ms = int(snapshot.get("updated_at_ms", 0) or 0)
+    now_ms = int(time.time() * 1000)
+    account_age_ms = max(0, now_ms - updated_at_ms) if updated_at_ms else None
+    account_stale = account_age_ms is None or account_age_ms > 15_000
+
+    collateral_raw = account.get("collateral")
+    try:
+        collateral = (float(collateral_raw)
+                      if collateral_raw not in (None, "") else None)
+    except (TypeError, ValueError):
+        collateral = None
+
+    gross_notional = 0.0
+    gross_available = True
+    for position in positions:
+        try:
+            size = abs(float(position.get("position", 0)
+                             or position.get("size", 0) or 0))
+            value_raw = position.get("position_value")
+            value = abs(float(value_raw)) if value_raw not in (None, "") else 0.0
+            if size and not value:
+                mark = float(position.get("mark_price", 0)
+                             or position.get("avg_entry_price", 0) or 0)
+                if mark <= 0:
+                    gross_available = False
+                    continue
+                value = size * mark
+            gross_notional += value
+        except (TypeError, ValueError):
+            gross_available = False
+
+    authenticated = bool(account) and collateral is not None
+    gross_leverage = (gross_notional / collateral
+                      if authenticated and collateral and gross_available else None)
+    capacity_ok = bool(
+        authenticated and not account_stale and gross_leverage is not None
+        and gross_leverage <= LIGHTER_MICRO_MAX_ACCOUNT_GROSS_LEVERAGE
+    )
+    return {
+        "authenticated": authenticated,
+        "account_stale": account_stale,
+        "account_age_ms": account_age_ms,
+        "account_updated_ms": updated_at_ms or None,
+        "account_source": snapshot.get("source"),
+        "collateral": collateral,
+        "gross_notional": gross_notional if gross_available and authenticated else None,
+        "gross_leverage": gross_leverage,
+        "account_capacity_ok": capacity_ok,
+    }
+
+
+def _lighter_micro_live_gate_values() -> Dict[str, Optional[bool]]:
+    account = _lighter_micro_account_facts()
+    legacy_recovery_clear = not bool(
+        lighter_crypto_bot.state.get("recovery_required")
+        or lighter_crypto_bot.state.get("execution_blocked")
+    )
+    return {
+        # Validation and the order-validity/kill-switch contracts deliberately
+        # remain false until a durable recorder and audited submitter exist.
+        "validation_passed": False,
+        "recovery_clear": legacy_recovery_clear,
+        "account_capacity_ok": account["account_capacity_ok"],
+        "exchange_order_valid": False,
+        "reconciliation_clear": legacy_recovery_clear,
+        "kill_switch_clear": False,
+    }
+
+
+def _lighter_micro_config_schema() -> Dict[str, Any]:
+    config = lighter_micro_runtime.config
+    conditions = []
+    for spec in LIGHTER_MICRO_CONDITION_SPECS:
+        section = config[spec["section"]]
+        label = spec["label"]
+        if spec["key"] == "entry_depth_imbalance":
+            label = f"Top {config['entry']['depth_levels']} depth imbalance"
+        conditions.append({
+            "key": spec["key"],
+            "label": label,
+            "enabled": bool(section[spec["enabled_field"]]),
+            "editable_threshold": True,
+            "threshold": {
+                "value": section[spec["threshold_field"]],
+                "min": spec["min"],
+                "max": spec["max"],
+                "step": spec["step"],
+                "unit": spec["unit"],
+            },
+        })
+    return {
+        "strategy_enabled": False,
+        "strategy_enabled_editable": False,
+        "live_execution_available": False,
+        "conditions": conditions,
+        "shared_evaluator": True,
+        "fixed_assumptions": _lighter_micro_fixed_assumptions(config),
+        "raw": config,
+    }
+
+
+def _lighter_micro_apply_config_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("Configuration body must be an object")
+    unknown = set(payload) - {"strategy_enabled", "conditions"}
+    if unknown:
+        raise ValueError(f"Unsupported configuration fields: {sorted(unknown)}")
+    if payload.get("strategy_enabled") is True:
+        raise ValueError(
+            "Live execution is locked: no audited Lighter microstructure order submitter exists"
+        )
+    if "strategy_enabled" in payload and not isinstance(payload["strategy_enabled"], bool):
+        raise ValueError("strategy_enabled must be a boolean")
+    rows = payload.get("conditions", [])
+    if not isinstance(rows, list):
+        raise ValueError("conditions must be an array")
+
+    by_key = {spec["key"]: spec for spec in LIGHTER_MICRO_CONDITION_SPECS}
+    updates: Dict[str, Dict[str, Any]] = {"entry": {}, "exit": {}}
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("Each condition update must be an object")
+        unknown_row = set(row) - {"key", "enabled", "threshold"}
+        if unknown_row:
+            raise ValueError(f"Unsupported condition fields: {sorted(unknown_row)}")
+        key = str(row.get("key") or "")
+        if key not in by_key:
+            raise ValueError(f"Unsupported condition: {key or '<missing>'}")
+        if key in seen:
+            raise ValueError(f"Duplicate condition: {key}")
+        seen.add(key)
+        spec = by_key[key]
+        section = updates[spec["section"]]
+        if "enabled" in row:
+            if not isinstance(row["enabled"], bool):
+                raise ValueError(f"{key}.enabled must be a boolean")
+            section[spec["enabled_field"]] = row["enabled"]
+        if "threshold" in row:
+            value = row["threshold"]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                    or not math.isfinite(float(value)):
+                raise ValueError(f"{key}.threshold must be a finite number")
+            numeric = float(value)
+            if numeric < float(spec["min"]) or numeric > float(spec["max"]):
+                raise ValueError(
+                    f"{key}.threshold must be between {spec['min']} and {spec['max']}"
+                )
+            if spec["threshold_field"] == "max_holding_ms":
+                if not numeric.is_integer():
+                    raise ValueError("exit_max_holding_time.threshold must be an integer")
+                section[spec["threshold_field"]] = int(numeric)
+            else:
+                section[spec["threshold_field"]] = numeric
+    nested = {name: values for name, values in updates.items() if values}
+    if nested:
+        lighter_micro_runtime.update_config(nested)
+    return _lighter_micro_config_schema()
 
 _REALIZED_HISTORY_KEYS = (
     "verified_exit_count", "verified_realized_pnl_usd", "pnl_reconciliation",
@@ -389,6 +791,18 @@ async def lighter_crypto_bot_worker():
             logger.exception("Lighter crypto bot worker failed")
         await asyncio.sleep(5)
 
+
+async def lighter_micro_worker():
+    """Record and paper-evaluate BTC L2/tape without submitting exchange orders."""
+    while True:
+        try:
+            await lighter_micro_runtime.run_once(
+                live_gates=_lighter_micro_live_gate_values()
+            )
+        except Exception:
+            logger.exception("Lighter microstructure paper worker failed")
+        await asyncio.sleep(0.25)
+
 async def realized_history_worker(refresh):
     while True:
         await refresh()
@@ -412,6 +826,7 @@ async def lifespan(app: FastAPI):
         logger.warning("No Upbit Access Key detected (checked .env, arbiter/keys.json, midas/keys.json).")
 
     await lighter_client.start_streams()
+    await lighter_client.start_micro_streams([1])
     await crypto_bot.verify_startup()
     await lighter_crypto_bot.verify_startup()
     broadcaster_task = asyncio.create_task(account_broadcaster())
@@ -421,6 +836,7 @@ async def lifespan(app: FastAPI):
     lighter_pair_task = asyncio.create_task(lighter_pair_worker())
     crypto_bot_task = asyncio.create_task(crypto_bot_worker())
     lighter_crypto_bot_task = asyncio.create_task(lighter_crypto_bot_worker())
+    lighter_micro_task = asyncio.create_task(lighter_micro_worker())
     history_task = asyncio.create_task(realized_history_worker(_refresh_crypto_history_snapshot))
     lighter_history_task = asyncio.create_task(realized_history_worker(_refresh_lighter_crypto_history_snapshot))
     yield
@@ -431,9 +847,14 @@ async def lifespan(app: FastAPI):
     lighter_pair_task.cancel()
     crypto_bot_task.cancel()
     lighter_crypto_bot_task.cancel()
+    lighter_micro_task.cancel()
     history_task.cancel()
     lighter_history_task.cancel()
-    await asyncio.gather(history_task, lighter_history_task, return_exceptions=True)
+    await asyncio.gather(
+        lighter_micro_task, history_task, lighter_history_task,
+        return_exceptions=True,
+    )
+    lighter_micro_runtime.flush()
     await asyncio.gather(binance_client.close(), upbit_client.close(), lighter_client.close(), return_exceptions=True)
     logger.info("HYPERION Trading Daemon shutdown complete.")
 
@@ -456,6 +877,7 @@ async def authorize_strategy_lab(request: Request, call_next):
         "/api/crypto/flatten", "/api/crypto/order",
         "/api/lighter-crypto/bot/", "/api/lighter-crypto/step_tranche",
         "/api/lighter-crypto/reduce_tranche", "/api/lighter-crypto/flatten",
+        "/api/lighter-micro/",
         "/api/trade/update_scaling", "/api/trade/update_entry_rate",
     )
     if (request.url.path.startswith(protected_prefixes)
@@ -1625,6 +2047,372 @@ async def flatten_crypto(request: Request) -> JSONResponse:
         return JSONResponse({"success": True, "message": "Bot-owned Binance Futures inventory flattened and bot paused", **result})
     except Exception as error:
         return JSONResponse({"success": False, "error": str(error), "bot": crypto_bot.public_state()}, status_code=400)
+
+
+def _lighter_micro_decorated_conditions(
+    conditions: Dict[str, Any], source: Any,
+) -> Dict[str, Any]:
+    labels = {spec["key"]: spec["label"] for spec in LIGHTER_MICRO_CONDITION_SPECS}
+    try:
+        labels["entry_depth_imbalance"] = (
+            f"Top {lighter_micro_runtime.config['entry']['depth_levels']} depth imbalance"
+        )
+    except (AttributeError, KeyError, TypeError):
+        pass
+    decorated = {}
+    for key, raw in (conditions or {}).items():
+        if key in LIGHTER_MICRO_MANDATORY_PREREQUISITE_KEYS:
+            continue
+        detail = copy.deepcopy(raw) if isinstance(raw, dict) else {"pass": raw}
+        detail["label"] = labels.get(key, key.replace("_", " ").title())
+        detail["source"] = copy.deepcopy(source)
+        detail["timestamp_ms"] = detail.get("source_timestamp_ms")
+        decorated[key] = detail
+    return decorated
+
+
+def _lighter_micro_decorated_prerequisites(
+    conditions: Dict[str, Any], source: Any,
+) -> Dict[str, Any]:
+    decorated = {}
+    labels = {"entry_direction": "Directional edge available"}
+    for key in LIGHTER_MICRO_MANDATORY_PREREQUISITE_KEYS:
+        if key not in (conditions or {}):
+            continue
+        raw = conditions[key]
+        detail = copy.deepcopy(raw) if isinstance(raw, dict) else {"pass": raw}
+        detail.update({
+            "label": labels.get(key, key.replace("_", " ").title()),
+            "mandatory": True,
+            "editable": False,
+            "requirement": (
+                "The fixed edge model must produce a non-zero long or short direction; "
+                "this prerequisite cannot be disabled"
+            ),
+            "source": copy.deepcopy(source),
+            "timestamp_ms": detail.get("source_timestamp_ms"),
+        })
+        decorated[key] = detail
+    return decorated
+
+
+def _lighter_micro_snapshot_payload(depth: int) -> Dict[str, Any]:
+    state = lighter_micro_runtime.public_state()
+    ladder = state.get("orderbook") or {}
+    metadata = ladder.get("metadata") or {}
+    timestamp_ms = int(ladder.get("timestamp_ms") or 0) or None
+    now_ms = int(time.time() * 1000)
+    data_age_ms = max(0, now_ms - timestamp_ms) if timestamp_ms else None
+    max_age_ms = int(state["config"]["runtime"]["max_quote_age_ms"])
+    bounded_depth = min(LIGHTER_MICRO_SNAPSHOT_DEPTH, max(1, int(depth)))
+    bids = list(ladder.get("bids") or [])[:bounded_depth]
+    asks = list(ladder.get("asks") or [])[:bounded_depth]
+    stream = lighter_client.micro_stream_status(1)
+    stream_market = (stream.get("markets") or {}).get("1") or {}
+    stream_connected = stream.get("connected") is True
+    book_valid = (
+        metadata.get("book_valid") is True
+        and metadata.get("feed_ready") is True
+        and stream_market.get("book_valid") is True
+    )
+    evaluation = state.get("latest_entry_evaluation") or {}
+    evaluation_valid = evaluation.get("feed_ready") is not False
+    stale = bool(
+        not stream_connected or not bids or not asks or not book_valid
+        or stream.get("last_error") not in (None, "") or not evaluation_valid
+        or data_age_ms is None or data_age_ms > max_age_ms
+    )
+    source = ladder.get("source") or "LIGHTER_PUBLIC_WS_ORDER_BOOK_TRADE"
+    conditions = {}
+    conditions.update(state.get("entry_conditions") or {})
+    conditions.update(state.get("exit_conditions") or {})
+    return {
+        "success": True,
+        "source": source,
+        "timestamp_ms": timestamp_ms,
+        "exchange_timestamp_ms": metadata.get("exchange_timestamp_ms"),
+        "received_at_ms": metadata.get("received_at_ms"),
+        "server_time_ms": now_ms,
+        "data_age_ms": data_age_ms,
+        "stale": stale,
+        "connected": stream_connected,
+        "book_valid": book_valid,
+        "evaluation_valid": evaluation_valid,
+        "requested_depth": int(depth),
+        "depth_limit": LIGHTER_MICRO_SNAPSHOT_DEPTH,
+        "order_book": {"bids": bids, "asks": asks, "depth": bounded_depth},
+        "metric_context": {
+            "depth_levels": state["config"]["entry"]["depth_levels"],
+            "trade_flow_lookback_ms": state["config"]["entry"]["trade_flow_lookback_ms"],
+            "momentum_lookback_ms": state["config"]["entry"]["momentum_lookback_ms"],
+        },
+        "metrics": copy.deepcopy(evaluation.get("metrics") or {}),
+        "paper_conditions": _lighter_micro_decorated_conditions(
+            conditions, evaluation.get("source") or state.get("source")
+        ),
+        "paper_prerequisites": _lighter_micro_decorated_prerequisites(
+            conditions, evaluation.get("source") or state.get("source")
+        ),
+        "paper": {
+            "conditions": _lighter_micro_decorated_conditions(
+                conditions, evaluation.get("source") or state.get("source")
+            ),
+            "prerequisites": _lighter_micro_decorated_prerequisites(
+                conditions, evaluation.get("source") or state.get("source")
+            ),
+            "source": copy.deepcopy(evaluation.get("source") or state.get("source")),
+            "timestamp_ms": timestamp_ms,
+            "stale": stale,
+        },
+        "stream": stream,
+        "last_error": state.get("last_error"),
+    }
+
+
+def _lighter_micro_safeguards(
+    state: Dict[str, Any], account: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    gates = ((state.get("live") or {}).get("gates") or {}).get("gates") or {}
+    timestamp_ms = (state.get("source") or {}).get("timestamp_ms")
+
+    def gate_state(key: str) -> str:
+        detail = gates.get(key) or {}
+        if detail.get("available") is False or detail.get("pass") is None:
+            return "UNAVAILABLE"
+        return "PASS" if detail.get("pass") is True else "WAITING"
+
+    gross_leverage = account.get("gross_leverage")
+    account_state = (
+        "UNAVAILABLE" if not account.get("authenticated") or gross_leverage is None
+        else "PASS" if account.get("account_capacity_ok") else "BLOCKED"
+    )
+    recovery_clear = not bool(
+        lighter_crypto_bot.state.get("recovery_required")
+        or lighter_crypto_bot.state.get("execution_blocked")
+    )
+    bot_paused = not bool(lighter_crypto_bot.state.get("enabled"))
+    recorder = state.get("recorder") or {}
+    recorder_ready = gate_state("recorder_ready")
+    quote_detail = gates.get("quote_fresh") or {}
+    quote_age = quote_detail.get("measured_value")
+    quote_limit = quote_detail.get("threshold")
+    return [
+        {
+            "key": "quote_fresh", "label": "L2 quote freshness",
+            "state": gate_state("quote_fresh"),
+            "detail": (f"Observed age {quote_age} ms; limit {quote_limit} ms"
+                       if quote_age is not None and quote_limit is not None
+                       else "No causal quote-age measurement is available"),
+            "timestamp_ms": timestamp_ms,
+        },
+        {
+            "key": "book_valid", "label": "Order-book nonce continuity",
+            "state": gate_state("book_valid"),
+            "detail": "Book updates must remain contiguous; any nonce gap reconnects and fails closed",
+            "timestamp_ms": timestamp_ms,
+        },
+        {
+            "key": "legacy_one_leg_paused", "label": "Old one-leg bot paused",
+            "state": "PASS" if bot_paused else "BLOCKED",
+            "detail": "Paused without flattening; exchange-native protection and existing inventory remain intact",
+            "timestamp_ms": int(time.time() * 1000),
+        },
+        {
+            "key": "legacy_recovery_clear", "label": "Legacy recovery reconciled",
+            "state": "PASS" if recovery_clear else "BLOCKED",
+            "detail": ("No legacy recovery block is reported" if recovery_clear else
+                       "The existing Lighter bot still reports an unresolved native-order recovery condition"),
+            "timestamp_ms": int(time.time() * 1000),
+        },
+        {
+            "key": "account_capacity_ok", "label": "Account gross leverage at pilot cap",
+            "state": account_state,
+            "detail": (
+                f"Gross leverage {gross_leverage:.2f}x; live pilot cap "
+                f"{LIGHTER_MICRO_MAX_ACCOUNT_GROSS_LEVERAGE:.2f}x"
+                if gross_leverage is not None else
+                "Fresh authenticated collateral and all-position gross exposure are required"
+            ),
+            "timestamp_ms": account.get("account_updated_ms"),
+        },
+        {
+            "key": "recorder_ready", "label": "Prospective causal sample",
+            "state": recorder_ready,
+            "detail": (
+                f"{recorder.get('total_snapshots', 0)} snapshots observed; "
+                f"runtime minimum {state['config']['runtime']['live_min_recorded_snapshots']}"
+            ),
+            "timestamp_ms": recorder.get("latest_timestamp_ms"),
+        },
+        {
+            "key": "out_of_sample_validation", "label": "Out-of-sample validation",
+            "state": "WAITING",
+            "detail": "Requires at least 30 days and 1,000 causal signals across volatility regimes",
+            "timestamp_ms": timestamp_ms,
+        },
+        {
+            "key": "live_order_submitter", "label": "Audited live order submitter",
+            "state": "BLOCKED",
+            "detail": "Not implemented. This lab has no exchange order endpoint and cannot arm live trading",
+            "timestamp_ms": timestamp_ms,
+        },
+    ]
+
+
+@app.get("/api/lighter-micro/snapshot")
+async def get_lighter_micro_snapshot(
+    depth: int = Query(10, ge=1, le=LIGHTER_MICRO_SNAPSHOT_DEPTH),
+) -> Dict[str, Any]:
+    return _lighter_micro_snapshot_payload(depth)
+
+
+@app.get("/api/lighter-micro/status")
+async def get_lighter_micro_status() -> Dict[str, Any]:
+    state = lighter_micro_runtime.public_state()
+    account = _lighter_micro_account_facts()
+    stream = lighter_client.micro_stream_status(1)
+    server_time_ms = int(time.time() * 1000)
+    health = _lighter_micro_status_health(state, stream, server_time_ms)
+    evaluation = state.get("latest_entry_evaluation") or {}
+    source = evaluation.get("source") or state.get("source") or {}
+    timestamp_ms = health["evaluation_timestamp_ms"]
+    conditions = {}
+    conditions.update(state.get("entry_conditions") or {})
+    conditions.update(state.get("exit_conditions") or {})
+    decorated = _lighter_micro_decorated_conditions(conditions, source)
+    prerequisites = _lighter_micro_decorated_prerequisites(conditions, source)
+    safeguards = _lighter_micro_safeguards(state, account)
+    return {
+        "success": True,
+        "authenticated": account["authenticated"],
+        "source": "LIGHTER_MICRO_LIVE_MARKET_EVALUATOR",
+        "timestamp_ms": timestamp_ms,
+        "server_time_ms": server_time_ms,
+        **health,
+        "live_execution_available": False,
+        "order_submission_implemented": False,
+        "config": _lighter_micro_config_schema(),
+        "live_conditions": decorated,
+        "live_prerequisites": prerequisites,
+        "mandatory_prerequisites": {"live": prerequisites},
+        "last_evaluation": {
+            "conditions": decorated,
+            "prerequisites": prerequisites,
+            "source": copy.deepcopy(source),
+            "timestamp_ms": timestamp_ms,
+            "stale": health["stale"],
+        },
+        "live": {
+            "conditions": decorated,
+            "prerequisites": prerequisites,
+            "source": copy.deepcopy(source),
+            "timestamp_ms": timestamp_ms,
+            "stale": health["stale"],
+            "connected": health["connected"],
+            "book_valid": health["book_valid"],
+            "quote_age_ms": health["quote_age_ms"],
+            "armed": False,
+            "order_submission_implemented": False,
+            "blocked_reason": (
+                "Shadow/paper only: validation, recovery, account exposure, and "
+                "order-submitter gates are not all clear"
+            ),
+        },
+        "safeguards": safeguards,
+        "safeguards_meta": {
+            "source": "LIGHTER_MICRO_EXECUTION_GATES",
+            "timestamp_ms": max(
+                (int(item["timestamp_ms"]) for item in safeguards
+                 if item.get("timestamp_ms")), default=None,
+            ),
+        },
+        "safeguards_stale": bool(
+            health["stale"] or not account["authenticated"] or account["account_stale"]
+        ),
+        "account": account,
+        "paper_account": state.get("paper_account"),
+        "recorder": state.get("recorder"),
+        "stream": stream,
+        "last_error": state.get("last_error"),
+    }
+
+
+@app.get("/api/lighter-micro/replay")
+async def get_lighter_micro_replay(
+    limit: int = Query(500, ge=1, le=2_000),
+) -> Dict[str, Any]:
+    async with backtest_compute_lock:
+        result = await lighter_micro_runtime.replay_async(limit)
+    source_meta = copy.deepcopy(result.get("source") or {})
+    timestamp_ms = source_meta.get("latest_timestamp_ms")
+    evaluations = copy.deepcopy(result.get("evaluations") or [])
+    latest = evaluations[-1] if evaluations else None
+    conditions = copy.deepcopy((latest or {}).get("conditions") or {})
+    paper_source = (latest or {}).get("source") or {
+        "name": "PROSPECTIVE_IN_MEMORY_L2_TRADES",
+        "instrument": "BTC",
+        "timestamp_ms": timestamp_ms,
+    }
+    for evaluation in evaluations:
+        raw_conditions = evaluation.get("conditions") or {}
+        evaluation["prerequisites"] = _lighter_micro_decorated_prerequisites(
+            raw_conditions, evaluation.get("source")
+        )
+        evaluation["conditions"] = _lighter_micro_decorated_conditions(
+            raw_conditions, evaluation.get("source")
+        )
+    paper_prerequisites = _lighter_micro_decorated_prerequisites(
+        conditions, paper_source
+    )
+    return {
+        "success": True,
+        **{key: value for key, value in result.items() if key != "source"},
+        "source": "PROSPECTIVE_IN_MEMORY_L2_TRADES",
+        "source_meta": source_meta,
+        "timestamp_ms": timestamp_ms,
+        "server_time_ms": int(time.time() * 1000),
+        "stale": not bool(evaluations),
+        "evaluations": evaluations,
+        "paper": {
+            "conditions": _lighter_micro_decorated_conditions(conditions, paper_source),
+            "prerequisites": paper_prerequisites,
+            "source": copy.deepcopy(paper_source),
+            "timestamp_ms": timestamp_ms,
+            "stale": not bool(evaluations),
+        },
+        "paper_conditions": _lighter_micro_decorated_conditions(
+            conditions, paper_source
+        ),
+        "paper_prerequisites": paper_prerequisites,
+        "mandatory_prerequisites": {"paper": paper_prerequisites},
+        "fills": copy.deepcopy(result.get("paper_fills") or []),
+        "trades": copy.deepcopy(result.get("paper_trades") or []),
+        "raw_history_persisted": False,
+        "replay_scope": "PROSPECTIVE_IN_MEMORY_ONLY",
+    }
+
+
+@app.post("/api/lighter-micro/config")
+async def configure_lighter_micro(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse(
+            {"success": False, "error": "Unlock the terminal first"},
+            status_code=401,
+        )
+    try:
+        body = await request.json()
+        async with lighter_micro_runtime.lock:
+            schema = _lighter_micro_apply_config_payload(body)
+        return JSONResponse({
+            "success": True,
+            "message": "Shared paper/live evaluator settings saved; live execution remains locked",
+            "config": schema,
+            "order_submission_implemented": False,
+        })
+    except Exception as error:
+        return JSONResponse(
+            {"success": False, "error": str(error)}, status_code=400
+        )
 
 
 # Tab 5 owns separate Lighter inventory and history. Tab 4 endpoints remain Binance-only.

@@ -154,6 +154,7 @@ async function run() {
     { name: "lighter", navId: "navTabLighter", hostId: "lighter_shortTermSpreadChartHost", engine: "window.lighterEngine", series: "series", chart: "chart", data: "bars" },
     { name: "crypto", navId: "navTabCrypto", hostId: "crypto_shortTermSpreadChartHost", engine: "window.cryptoEngine", series: "series", chart: "chart", data: "bars" },
     { name: "lighterCrypto", navId: "navTabLighterCrypto", hostId: "lighterCrypto_shortTermSpreadChartHost", engine: "window.lighterCryptoEngine", series: "series", chart: "chart", data: "bars" },
+    { name: "lighterMicro", navId: "navTabLighterMicro", hostId: "lighterMicro_chartHost", engine: "window.lighterMicroEngine", series: "priceSeries", chart: "chart", data: "bars", micro: true },
   ];
 
   const failures = [];
@@ -167,7 +168,7 @@ async function run() {
       let firstChartMs = null;
       let firstAccountMs = null;
       const pollStart = Date.now();
-      const pollTimeoutMs = t.name === "lighterCrypto" ? 60000 : 45000;
+      const pollTimeoutMs = ["lighterCrypto", "lighterMicro"].includes(t.name) ? 60000 : 45000;
 
       while (Date.now() - pollStart < pollTimeoutMs) {
         diag = await evaluate(`(() => {
@@ -189,6 +190,9 @@ async function run() {
           const bars = engine?.${t.data || "bars"} || [];
           const series = engine?.${t.series || "series"};
           const chart = engine?.${t.chart || "chart"};
+          const pricePoints = series?.data?.().length || 0;
+          const ma7Points = ${t.micro ? "engine?.ma7Series?.data?.().length || 0" : "null"};
+          const ma24Points = ${t.micro ? "engine?.ma24Series?.data?.().length || 0" : "null"};
           const range = chart?.timeScale().getVisibleLogicalRange();
           const index = Math.max(0, Math.min(bars.length - 1, Math.floor(((range?.from || 0) + (range?.to || 0)) / 2)));
           const point = series?.dataByIndex?.(index);
@@ -200,13 +204,22 @@ async function run() {
           const svgVisible = ${!!t.svg} && !!host?.querySelector('path[d]')
             && (host?.querySelectorAll('text').length || 0) > 1;
           return {
-            accountReady: Number.isFinite(engine?.liveVenue?.collateral) && engine?.liveVenue?.authenticated === true,
-            accountSourceTime: engine?.liveVenue?.server_time_ms || null,
-            accountError: engine?.liveVenue?.error || null,
+            accountReady: ${t.micro
+              ? "engine?.account?.success !== false && engine?.account?.authenticated === true && engine?.account?.account_stale !== true && Number.isFinite(engine?.account?.collateral) && Number.isFinite(engine?.account?.available_margin) && Array.isArray(engine?.account?.positions) && !engine?.errors?.account"
+              : "Number.isFinite(engine?.liveVenue?.collateral) && engine?.liveVenue?.authenticated === true"},
+            accountSourceTime: ${t.micro ? "engine?.account?.account_updated_ms || null" : "engine?.liveVenue?.server_time_ms || null"},
+            accountError: ${t.micro ? "engine?.errors?.account || engine?.account?.error || null" : "engine?.liveVenue?.error || null"},
+            accountReadinessMs: ${t.micro ? "engine?.readiness?.accountMs ?? null" : "null"},
+            chartReadinessMs: ${t.micro ? "engine?.readiness?.chartMs ?? null" : "null"},
+            chartRendered: ${t.micro ? "engine?.chartRendered === true" : "null"},
+            chartError: ${t.micro ? "engine?.errors?.chart || null" : "null"},
+            interval: ${t.micro ? "engine?.interval || null" : "null"},
+            chartDataInterval: ${t.micro ? "engine?.chartDataInterval || null" : "null"},
             collapsedAncestors: host ? Array.from(document.querySelectorAll(".is-collapsed")).filter(node => node.contains(host)).map(node => node.id) : [],
             lastCandleTime: bars.at(-1)?.time || null,
             chartSource: document.getElementById("${t.name === "lighterCrypto" ? "lighterCrypto_" : t.name === "crypto" ? "crypto_" : t.name === "lighter" ? "lighter_" : ""}lblShortTermChartSync")?.textContent,
             seriesVisible, svgVisible, price: Number.isFinite(price) ? price : null, x, y,
+            pricePoints, ma7Points, ma24Points,
             tab: "${t.name}",
             activeTabDisplay: document.getElementById("tabContent" + "${t.name.charAt(0).toUpperCase() + t.name.slice(1)}")?.style.display,
             hostExists: !!host,
@@ -219,23 +232,31 @@ async function run() {
         })()`);
 
         const isHealthy = diag && diag.hostExists && diag.hostWidth > 0 && diag.hostHeight > 0 &&
-          (t.svg ? diag.svgVisible : diag.seriesVisible && diag.canvases.some(c => c.hasContent === true));
+          (t.svg ? diag.svgVisible : diag.seriesVisible && diag.canvases.some(c => c.hasContent === true)) &&
+          (!t.micro || (diag.chartRendered && !diag.chartError && diag.bars > 1
+            && diag.pricePoints > 1 && diag.ma7Points > 1 && diag.ma24Points > 1
+            && Number.isFinite(diag.chartReadinessMs)));
 
         if (isHealthy && firstChartMs === null) firstChartMs = Date.now() - pollStart;
         if (diag?.accountReady && firstAccountMs === null) firstAccountMs = Date.now() - pollStart;
-        if (isHealthy && (t.name !== "lighterCrypto" || diag.accountReady)) break;
+        if (isHealthy && (!["lighterCrypto", "lighterMicro"].includes(t.name)
+            || (diag.accountReady && (!t.micro || Number.isFinite(diag.accountReadinessMs))))) break;
         await new Promise((r) => setTimeout(r, 600));
       }
 
       console.log("Cold-profile loading timings:", {tab: t.name, chartMs: firstChartMs, accountMs: firstAccountMs});
       console.log("Tab Diagnostic:", JSON.stringify(diag, null, 2));
 
-      if (["crypto", "lighterCrypto"].includes(t.name) && diag?.seriesVisible) {
+      if (["crypto", "lighterCrypto", "lighterMicro"].includes(t.name) && diag?.seriesVisible) {
         const originalInterval = await evaluate(`${t.engine}.interval`);
-        const targetInterval = originalInterval === "15m" ? "5m" : "15m";
+        const targetInterval = t.micro
+          ? (originalInterval === "1m" ? "5m" : "1m")
+          : (originalInterval === "15m" ? "5m" : "15m");
         const prefix = t.name === "crypto" ? "crypto_" : "lighterCrypto_";
         const switched = await evaluate(`(() => {
-          const button = document.getElementById("${prefix}btnShortInterval${targetInterval}");
+          const button = ${t.micro
+            ? `document.querySelector('#tabContentLighterMicro [data-micro-interval="${targetInterval}"]')`
+            : `document.getElementById("${prefix}btnShortInterval${targetInterval}")`};
           if (!button) return false;
           button.click();
           return true;
@@ -249,21 +270,29 @@ async function run() {
             const series = engine?.${t.series || "series"};
             return {
               interval: engine?.interval,
-              chartInterval: engine?.chartInterval,
+              chartInterval: ${t.micro ? "engine?.chartDataInterval" : "engine?.chartInterval"},
               bars: bars.length,
               points: series?.data?.().length || 0,
+              ma7Points: ${t.micro ? "engine?.ma7Series?.data?.().length || 0" : "null"},
+              ma24Points: ${t.micro ? "engine?.ma24Series?.data?.().length || 0" : "null"},
+              chartRendered: ${t.micro ? "engine?.chartRendered === true" : "null"},
+              chartError: ${t.micro ? "engine?.errors?.chart || null" : "null"},
               lastCandleTime: bars.at(-1)?.time || null,
             };
           })()`);
           if (intervalDiag?.interval === targetInterval
               && intervalDiag?.chartInterval === targetInterval
-              && intervalDiag?.bars > 1 && intervalDiag?.points > 1) break;
+              && intervalDiag?.bars > 1 && intervalDiag?.points > 1
+              && (!t.micro || (intervalDiag?.chartRendered && !intervalDiag?.chartError
+                && intervalDiag?.ma7Points > 1 && intervalDiag?.ma24Points > 1))) break;
           await new Promise((r) => setTimeout(r, 500));
         }
         console.log("Interval-switch diagnostic:", {tab:t.name, from:originalInterval, to:targetInterval, elapsedMs:Date.now()-intervalStart, ...intervalDiag});
         if (!switched || intervalDiag?.interval !== targetInterval
             || intervalDiag?.chartInterval !== targetInterval
-            || intervalDiag?.bars <= 1 || intervalDiag?.points <= 1) {
+            || intervalDiag?.bars <= 1 || intervalDiag?.points <= 1
+            || (t.micro && (!intervalDiag?.chartRendered || intervalDiag?.chartError
+              || intervalDiag?.ma7Points <= 1 || intervalDiag?.ma24Points <= 1))) {
           failures.push(`${t.name}: ${originalInterval} -> ${targetInterval} interval switch did not render populated data`);
         }
       }
@@ -272,7 +301,7 @@ async function run() {
       await new Promise(r => setTimeout(r, 200));
       await captureScreenshot(`/tmp/live_${t.name}.png`);
 
-      if (process.env.HYPERION_VERIFY_INTERACTION === "1" && t.name !== "backtest" && diag?.seriesVisible) {
+      if (process.env.HYPERION_VERIFY_INTERACTION === "1" && t.name !== "backtest" && !t.micro && diag?.seriesVisible) {
         const state = () => evaluate(`(() => {
           const e=${t.engine},c=e.shortTermChart||e.chart,s=e.shortTermSeries||e.series,h=document.getElementById('${t.hostId}');
           const b=e.shortTermHistory?.bars||e.bars||[],r=h.getBoundingClientRect(),v=b.at(-1)?.value;
@@ -344,7 +373,15 @@ async function run() {
         if(Object.values(left.guides).some(g=>g.length))failures.push(`${t.name}: pivot guides remain after pointer leaves chart`);
         console.log('INTERACTION',JSON.stringify({tab:t.name,rangeBefore:before.range,rangeAfterHover:hovered.range,guideCounts:Object.fromEntries(Object.entries(hovered.guides).map(([k,v])=>[k,v.length])),intersectionCounts:Object.fromEntries(Object.entries(hovered.intersections).map(([k,v])=>[k,v.length])),crossingCandidate,zoomed:zoomed.range,dragged:dragged.range,linked:dragged.follower,priceSpanBefore:dragged.priceSpan,priceSpanAfter:scaled.priceSpan,cleared:Object.values(left.guides).every(g=>!g.length)}));
       }
-      if (t.name === "lighterCrypto" && !diag?.accountReady) failures.push("Tab lighterCrypto: real account data did not load");
+      if (["lighterCrypto", "lighterMicro"].includes(t.name) && !diag?.accountReady) {
+        failures.push(`Tab ${t.name}: real account data did not load`);
+      }
+      if (t.micro && (!Number.isFinite(diag?.accountReadinessMs) || !Number.isFinite(diag?.chartReadinessMs))) {
+        failures.push("Tab lighterMicro: separate account/chart readiness timings were not recorded");
+      }
+      if (t.micro && (diag?.pricePoints <= 1 || diag?.ma7Points <= 1 || diag?.ma24Points <= 1)) {
+        failures.push(`Tab lighterMicro: expected price/MA7/MA24 series are not populated (${diag?.pricePoints}/${diag?.ma7Points}/${diag?.ma24Points})`);
+      }
       if (!diag?.hostExists) {
         failures.push(`Tab ${t.name}: host ${t.hostId} not found`);
       } else if (t.svg ? !diag.svgVisible : !diag.seriesVisible || !diag.canvases.some(c => c.hasContent === true)) {

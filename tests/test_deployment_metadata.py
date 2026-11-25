@@ -36,6 +36,7 @@ class DeploymentMetadataTests(unittest.TestCase):
             self.assertNotIn('buildVersion: "v1.7.1+local"', html)
             self.assertIn('src="crypto-tab.js?v=v1.7.1+abc1234.20260922153000"', html)
             self.assertIn('src="lighter-crypto-tab.js?v=v1.7.1+abc1234.20260922153000"', html)
+            self.assertIn('src="lighter-micro-tab.js?v=v1.7.1+abc1234.20260922153000"', html)
             self.assertIn('src="held-pair-pnl.js?v=v1.7.1+abc1234.20260922153000"', html)
 
 

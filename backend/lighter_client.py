@@ -2,10 +2,12 @@ import asyncio
 import copy
 import json
 import logging
+import math
 from pathlib import Path
 import time
+from collections import deque
 from decimal import Decimal, ROUND_DOWN
-from typing import Any, Dict, List, Optional
+from typing import Any, Deque, Dict, Iterable, List, Optional
 
 import aiohttp
 
@@ -24,6 +26,11 @@ class LighterClient:
     DOMESTIC_MARKET_ID = 161
     CREDENTIALS_FILE = Path(__file__).with_name("lighter_credentials.json")
     MAX_CLIENT_ORDER_INDEX = (1 << 48) - 1
+    MICRO_BOOK_MAX_AGE_MS = 500
+    MICRO_SUBSCRIPTION_TIMEOUT_SECONDS = 5.0
+    MICRO_TRADE_BUFFER_LIMIT = 5_000
+    MICRO_TRADE_ID_LIMIT = 20_000
+    MICRO_DEFAULT_TRADE_LOOKBACK_MS = 1_000
 
     def __init__(self, base_url: Optional[str] = None):
         self.base_url = base_url or self.BASE_URL
@@ -38,6 +45,43 @@ class LighterClient:
         self._ws_account_time = 0.0
         self._ws_connected = False
         self._ws_last_error: Optional[str] = None
+        # Seconds-level strategies use a dedicated read-only socket.  Keeping
+        # this separate prevents recorder/feature work from delaying account
+        # updates or the existing pair engine's two order books.
+        self._micro_ws_task: Optional[asyncio.Task] = None
+        self._micro_market_ids: set[int] = set()
+        self._micro_books: Dict[int, Dict[str, Any]] = {}
+        self._micro_book_times: Dict[int, float] = {}
+        self._micro_book_received_ms: Dict[int, int] = {}
+        self._micro_book_exchange_ms: Dict[int, int] = {}
+        self._micro_book_nonces: Dict[int, int] = {}
+        self._micro_book_valid: Dict[int, bool] = {}
+        self._micro_book_acknowledged: Dict[int, bool] = {}
+        self._micro_book_connection_ids: Dict[int, int] = {}
+        self._micro_trades: Dict[int, Deque[Dict[str, Any]]] = {}
+        self._micro_trade_ids: Dict[int, set[str]] = {}
+        self._micro_trade_id_order: Dict[int, Deque[str]] = {}
+        self._micro_trade_nonces: Dict[int, int] = {}
+        self._micro_tape_acknowledged: Dict[int, bool] = {}
+        self._micro_tape_valid: Dict[int, bool] = {}
+        self._micro_tape_connection_ids: Dict[int, int] = {}
+        self._micro_tape_times: Dict[int, float] = {}
+        self._micro_last_trade_times: Dict[int, float] = {}
+        self._micro_warmup_started: Dict[int, float] = {}
+        self._micro_trade_lookback_ms: Dict[int, int] = {}
+        self._micro_duplicate_counts: Dict[int, int] = {}
+        self._micro_malformed_counts: Dict[int, int] = {}
+        self._micro_overflow_counts: Dict[int, int] = {}
+        self._micro_last_overflow_ms: Dict[int, int] = {}
+        self._micro_liquidation_counts: Dict[int, int] = {}
+        self._micro_pre_ack_trade_counts: Dict[int, int] = {}
+        self._micro_connected = False
+        self._micro_connection_id = 0
+        self._micro_connection_started_ms: Optional[int] = None
+        self._micro_connection_started_monotonic: Optional[float] = None
+        self._micro_gap_count = 0
+        self._micro_malformed_count = 0
+        self._micro_last_error: Optional[str] = None
         # Serialize account-wide capacity checks and multi-bot submissions.
         self.execution_lock = asyncio.Lock()
 
@@ -143,6 +187,782 @@ class LighterClient:
             except Exception as error:
                 logger.warning("Lighter account bootstrap unavailable; starting public streams: %s", error)
             self._ws_task = asyncio.create_task(self._stream_loop(), name="lighter-market-stream")
+
+    async def start_micro_streams(self, market_ids: Iterable[int]) -> None:
+        """Start a dedicated public L2/trade stream for microstructure research.
+
+        Calling again with a new market set reconnects so every requested
+        subscription receives an authoritative full-book snapshot first.
+        """
+        requested = {int(market_id) for market_id in market_ids}
+        if not requested:
+            raise ValueError("At least one Lighter microstructure market is required")
+        changed = not requested.issubset(self._micro_market_ids)
+        self._micro_market_ids.update(requested)
+        if changed and self._micro_ws_task is not None and not self._micro_ws_task.done():
+            self._micro_ws_task.cancel()
+            await asyncio.gather(self._micro_ws_task, return_exceptions=True)
+            self._micro_ws_task = None
+        if self._micro_ws_task is None or self._micro_ws_task.done():
+            self._micro_ws_task = asyncio.create_task(
+                self._micro_stream_loop(), name="lighter-microstructure-stream"
+            )
+
+    @staticmethod
+    def _message_int(payload: Dict[str, Any], nested: Dict[str, Any], key: str) -> Optional[int]:
+        value = nested.get(key, payload.get(key))
+        return value if type(value) is int else None
+
+    @staticmethod
+    def _epoch_ms(value: Optional[int]) -> Optional[int]:
+        if value is None or value <= 0:
+            return None
+        # Lighter payloads have historically mixed seconds, milliseconds and
+        # microseconds across channels.  Normalize without presenting a local
+        # receipt timestamp as an exchange timestamp.
+        if value < 100_000_000_000:
+            return value * 1000
+        if value > 10_000_000_000_000:
+            return value // 1000
+        return value
+
+    def _reset_micro_market_epoch(self, market_id: int) -> None:
+        """Discard every datum that could have come from an older socket."""
+        for mapping in (
+            self._micro_books,
+            self._micro_book_times,
+            self._micro_book_received_ms,
+            self._micro_book_exchange_ms,
+            self._micro_book_nonces,
+            self._micro_book_connection_ids,
+            self._micro_trade_nonces,
+            self._micro_tape_connection_ids,
+            self._micro_tape_times,
+            self._micro_last_trade_times,
+            self._micro_warmup_started,
+            self._micro_last_overflow_ms,
+        ):
+            mapping.pop(market_id, None)
+        self._micro_book_valid[market_id] = False
+        self._micro_book_acknowledged[market_id] = False
+        self._micro_tape_acknowledged[market_id] = False
+        self._micro_tape_valid[market_id] = False
+        self._micro_trades[market_id] = deque(maxlen=self.MICRO_TRADE_BUFFER_LIMIT)
+        self._micro_trade_ids[market_id] = set()
+        self._micro_trade_id_order[market_id] = deque()
+        self._micro_trade_lookback_ms.setdefault(
+            market_id, self.MICRO_DEFAULT_TRADE_LOOKBACK_MS
+        )
+
+    def _begin_micro_connection(self) -> int:
+        self._micro_connection_id += 1
+        self._micro_connected = True
+        self._micro_connection_started_ms = int(time.time() * 1000)
+        self._micro_connection_started_monotonic = time.monotonic()
+        for market_id in self._micro_market_ids:
+            self._reset_micro_market_epoch(market_id)
+        return self._micro_connection_id
+
+    def _end_micro_connection(self) -> None:
+        self._micro_connected = False
+        for market_id in self._micro_market_ids:
+            self._micro_book_valid[market_id] = False
+            self._micro_book_acknowledged[market_id] = False
+            self._micro_tape_valid[market_id] = False
+            self._micro_tape_acknowledged[market_id] = False
+            self._micro_warmup_started.pop(market_id, None)
+
+    def _micro_payload_failure(
+        self,
+        market_id: Optional[int],
+        message: str,
+        *,
+        book: bool = False,
+        tape: bool = False,
+        gap: bool = False,
+    ) -> None:
+        self._micro_malformed_count += 1
+        if market_id is not None:
+            self._micro_malformed_counts[market_id] = (
+                self._micro_malformed_counts.get(market_id, 0) + 1
+            )
+            if book:
+                self._micro_book_valid[market_id] = False
+            if tape:
+                self._micro_tape_valid[market_id] = False
+            self._micro_warmup_started.pop(market_id, None)
+        else:
+            for item in self._micro_market_ids:
+                self._micro_book_valid[item] = False
+                self._micro_tape_valid[item] = False
+                self._micro_warmup_started.pop(item, None)
+        if gap:
+            self._micro_gap_count += 1
+        self._micro_last_error = message[:300]
+        raise RuntimeError(message)
+
+    @staticmethod
+    def _micro_error_envelope(payload: Dict[str, Any]) -> Optional[str]:
+        message_type = str(payload.get("type") or "").lower()
+        error = payload.get("error")
+        if "error" in payload and error is not None:
+            return f"Lighter websocket error envelope: {error}"
+        if message_type in {"error", "subscription_error", "subscribe/error"}:
+            detail = payload.get("message") or payload.get("reason") or message_type
+            return f"Lighter websocket error envelope: {detail}"
+        if payload.get("success") is False:
+            detail = payload.get("message") or payload.get("reason") or "success=false"
+            return f"Lighter websocket rejected request: {detail}"
+        return None
+
+    @staticmethod
+    def _micro_decimal(value: Any, label: str, *, allow_zero: bool) -> Decimal:
+        try:
+            parsed = Decimal(str(value))
+        except Exception as error:
+            raise ValueError(f"{label} is not numeric") from error
+        try:
+            float_value = float(parsed)
+        except (OverflowError, ValueError) as error:
+            raise ValueError(f"{label} is outside the supported numeric range") from error
+        if (
+            not parsed.is_finite()
+            or not math.isfinite(float_value)
+            or (parsed != 0 and float_value == 0)
+            or parsed < 0
+            or (not allow_zero and parsed == 0)
+        ):
+            qualifier = "non-negative" if allow_zero else "positive"
+            raise ValueError(f"{label} must be finite and {qualifier}")
+        return parsed
+
+    @classmethod
+    def _validated_micro_ladders(
+        cls, update: Dict[str, Any], *, allow_zero_size: bool
+    ) -> Dict[str, Dict[Decimal, Dict[str, Any]]]:
+        result: Dict[str, Dict[Decimal, Dict[str, Any]]] = {}
+        for side in ("bids", "asks"):
+            raw = update.get(side)
+            if not isinstance(raw, list):
+                raise ValueError(f"order book {side} must be a list")
+            levels: Dict[Decimal, Dict[str, Any]] = {}
+            for index, row in enumerate(raw):
+                if not isinstance(row, dict):
+                    raise ValueError(f"order book {side}[{index}] must be an object")
+                price = cls._micro_decimal(
+                    row.get("price"), f"order book {side}[{index}].price", allow_zero=False
+                )
+                cls._micro_decimal(
+                    row.get("size"),
+                    f"order book {side}[{index}].size",
+                    allow_zero=allow_zero_size,
+                )
+                if price in levels:
+                    raise ValueError(f"order book {side} contains duplicate price {price}")
+                levels[price] = dict(row)
+            result[side] = levels
+        return result
+
+    @staticmethod
+    def _validate_micro_book_shape(
+        levels: Dict[str, Dict[Decimal, Dict[str, Any]]]
+    ) -> None:
+        if not levels["bids"] or not levels["asks"]:
+            raise ValueError("full order book must contain at least one bid and ask")
+        best_bid = max(levels["bids"])
+        best_ask = min(levels["asks"])
+        if best_bid >= best_ask:
+            raise ValueError(
+                f"order book is crossed or locked: best_bid={best_bid}, best_ask={best_ask}"
+            )
+
+    def _refresh_micro_warmup(self, market_id: int) -> None:
+        current = self._micro_connection_id
+        ready = (
+            self._micro_connected
+            and self._micro_book_acknowledged.get(market_id, False)
+            and self._micro_tape_acknowledged.get(market_id, False)
+            and self._micro_book_valid.get(market_id, False)
+            and self._micro_tape_valid.get(market_id, False)
+            and self._micro_book_connection_ids.get(market_id) == current
+            and self._micro_tape_connection_ids.get(market_id) == current
+        )
+        if ready:
+            self._micro_warmup_started.setdefault(market_id, time.monotonic())
+        else:
+            self._micro_warmup_started.pop(market_id, None)
+
+    def _micro_warmup_remaining_ms(self, market_id: int, now: Optional[float] = None) -> int:
+        configured = max(
+            1,
+            int(self._micro_trade_lookback_ms.get(
+                market_id, self.MICRO_DEFAULT_TRADE_LOOKBACK_MS
+            )),
+        )
+        started = self._micro_warmup_started.get(market_id)
+        if started is None:
+            return configured
+        elapsed_ms = int(((now if now is not None else time.monotonic()) - started) * 1000)
+        return max(0, configured - max(0, elapsed_ms))
+
+    def _micro_subscriptions_ready(self) -> bool:
+        current = self._micro_connection_id
+        return self._micro_connected and bool(self._micro_market_ids) and all(
+            self._micro_book_acknowledged.get(market_id, False)
+            and self._micro_tape_acknowledged.get(market_id, False)
+            and self._micro_book_connection_ids.get(market_id) == current
+            and self._micro_tape_connection_ids.get(market_id) == current
+            for market_id in self._micro_market_ids
+        )
+
+    def _micro_subscription_timeout_reason(
+        self, subscribed: bool, deadline: float, *, now: Optional[float] = None
+    ) -> Optional[str]:
+        if (time.monotonic() if now is None else now) <= deadline:
+            return None
+        if not subscribed:
+            return "Lighter websocket connected-envelope timeout"
+        missing = []
+        for market_id in sorted(self._micro_market_ids):
+            if not self._micro_book_acknowledged.get(market_id, False):
+                missing.append(f"order_book/{market_id}")
+            if not self._micro_tape_acknowledged.get(market_id, False):
+                missing.append(f"trade/{market_id}")
+        if missing:
+            return "Lighter subscription acknowledgement timeout: " + ", ".join(missing)
+        return None
+
+    def _remember_micro_trade_id(self, market_id: int, trade_id: str) -> bool:
+        known = self._micro_trade_ids.setdefault(market_id, set())
+        if trade_id in known:
+            return False
+        order = self._micro_trade_id_order.setdefault(market_id, deque())
+        if len(order) >= self.MICRO_TRADE_ID_LIMIT:
+            known.discard(order.popleft())
+        order.append(trade_id)
+        known.add(trade_id)
+        return True
+
+    def _validate_micro_trade_identity(
+        self, trade: Any, market_id: int
+    ) -> tuple[Dict[str, Any], str]:
+        if not isinstance(trade, dict):
+            raise ValueError("trade row must be an object")
+        row_market_id = self._message_int(trade, {}, "market_id")
+        if row_market_id != market_id:
+            raise ValueError(
+                f"trade market_id must be {market_id}, received {trade.get('market_id')!r}"
+            )
+        trade_id = trade.get("trade_id_str")
+        if not isinstance(trade_id, str) or not trade_id.strip():
+            raise ValueError("trade_id_str is required")
+        return trade, trade_id.strip()
+
+    def _normalize_micro_trade(
+        self, trade: Any, market_id: int, received_at_ms: int
+    ) -> Dict[str, Any]:
+        row, trade_id = self._validate_micro_trade_identity(trade, market_id)
+        if row.get("type") != "trade":
+            raise ValueError("ordinary trade row requires type='trade'")
+        if type(row.get("is_maker_ask")) is not bool:
+            raise ValueError("trade is_maker_ask must be a JSON boolean")
+        timestamp = self._epoch_ms(self._message_int(row, {}, "timestamp"))
+        if timestamp is None:
+            raise ValueError("trade timestamp is required")
+        price_decimal = self._micro_decimal(
+            row.get("price"), "trade price", allow_zero=False
+        )
+        size_decimal = self._micro_decimal(
+            row.get("size"), "trade size", allow_zero=False
+        )
+        price = float(price_decimal)
+        size = float(size_decimal)
+        if not math.isfinite(price) or not math.isfinite(size):
+            raise ValueError("trade price and size must be finite floats")
+        return {
+            "timestamp_ms": received_at_ms,
+            "received_at_ms": received_at_ms,
+            "exchange_timestamp_ms": timestamp,
+            "price": price,
+            "size": size,
+            "aggressor_side": "buy" if row["is_maker_ask"] else "sell",
+            "trade_id": trade_id,
+            "trade_id_str": trade_id,
+            "connection_id": self._micro_connection_id,
+        }
+
+    async def _micro_stream_loop(self) -> None:
+        delay = 1.0
+        base = self.base_url.replace("https://", "wss://").replace("http://", "ws://").rstrip("/")
+        ws_url = base + "/stream?readonly=true"
+        while True:
+            try:
+                session = await self.get_session()
+                async with session.ws_connect(ws_url, heartbeat=20, receive_timeout=None) as ws:
+                    self._begin_micro_connection()
+                    subscribed = False
+                    deadline = time.monotonic() + self.MICRO_SUBSCRIPTION_TIMEOUT_SECONDS
+                    while True:
+                        try:
+                            message = await asyncio.wait_for(ws.receive(), timeout=1.0)
+                        except asyncio.TimeoutError:
+                            reason = self._micro_subscription_timeout_reason(
+                                subscribed, deadline
+                            )
+                            if reason:
+                                raise TimeoutError(reason)
+                            continue
+                        if message.type == aiohttp.WSMsgType.TEXT:
+                            try:
+                                payload = json.loads(message.data)
+                            except (TypeError, json.JSONDecodeError) as error:
+                                self._micro_payload_failure(
+                                    None, f"Lighter websocket sent invalid JSON: {error}"
+                                )
+                            if not isinstance(payload, dict):
+                                self._micro_payload_failure(
+                                    None, "Lighter websocket payload must be an object"
+                                )
+                            envelope_error = self._micro_error_envelope(payload)
+                            if envelope_error:
+                                self._micro_payload_failure(None, envelope_error)
+                            if payload.get("type") == "connected" and not subscribed:
+                                for market_id in sorted(self._micro_market_ids):
+                                    await ws.send_json({
+                                        "type": "subscribe",
+                                        "channel": f"order_book/{market_id}",
+                                    })
+                                    await ws.send_json({
+                                        "type": "subscribe",
+                                        "channel": f"trade/{market_id}",
+                                    })
+                                subscribed = True
+                                deadline = (
+                                    time.monotonic()
+                                    + self.MICRO_SUBSCRIPTION_TIMEOUT_SECONDS
+                                )
+                            elif payload.get("type") == "ping":
+                                await ws.send_json({"type": "pong"})
+                            else:
+                                self._handle_micro_stream_message(payload)
+                            if self._micro_subscriptions_ready():
+                                self._micro_last_error = None
+                                delay = 1.0
+                            reason = self._micro_subscription_timeout_reason(
+                                subscribed, deadline
+                            )
+                            if reason:
+                                raise TimeoutError(reason)
+                        elif message.type in {
+                            aiohttp.WSMsgType.CLOSE,
+                            aiohttp.WSMsgType.CLOSED,
+                            aiohttp.WSMsgType.CLOSING,
+                            aiohttp.WSMsgType.ERROR,
+                        }:
+                            detail = ws.exception() if message.type == aiohttp.WSMsgType.ERROR else None
+                            raise ConnectionError(
+                                f"Lighter microstructure websocket closed{f': {detail}' if detail else ''}"
+                            )
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                self._micro_last_error = str(error)[:300]
+                logger.warning("Lighter microstructure stream reconnecting after error: %s", error)
+            finally:
+                self._end_micro_connection()
+            await asyncio.sleep(delay)
+            delay = min(30.0, delay * 2.0)
+
+    def _handle_micro_stream_message(self, payload: Dict[str, Any]) -> None:
+        if not isinstance(payload, dict):
+            self._micro_payload_failure(None, "Lighter websocket payload must be an object")
+        envelope_error = self._micro_error_envelope(payload)
+        if envelope_error:
+            self._micro_payload_failure(None, envelope_error)
+        message_type = str(payload.get("type") or "")
+        market_id = self._channel_id(payload.get("channel"))
+        if market_id not in self._micro_market_ids:
+            return
+        received_at_ms = int(time.time() * 1000)
+
+        if message_type in {"subscribed/order_book", "update/order_book"}:
+            update = payload.get("order_book") or {}
+            if not isinstance(update, dict):
+                self._micro_payload_failure(
+                    market_id, "Lighter order_book payload must be an object", book=True
+                )
+            try:
+                code = self._message_int(payload, update, "code")
+                if code != 0:
+                    raise ValueError(f"order book code must be 0, received {code!r}")
+                nonce = self._message_int(payload, update, "nonce")
+                if nonce is None or nonce < 0:
+                    raise ValueError("order book nonce is required and non-negative")
+                begin_nonce = self._message_int(payload, update, "begin_nonce")
+                exchange_timestamp_ms = self._epoch_ms(
+                    self._message_int(payload, update, "timestamp")
+                    or self._message_int(payload, update, "last_updated_at")
+                )
+                incoming = self._validated_micro_ladders(
+                    update, allow_zero_size=message_type == "update/order_book"
+                )
+            except ValueError as error:
+                self._micro_payload_failure(
+                    market_id, f"Lighter market {market_id} malformed order book: {error}",
+                    book=True,
+                )
+
+            if message_type == "subscribed/order_book":
+                if begin_nonce is not None and (begin_nonce < 0 or begin_nonce > nonce):
+                    self._micro_payload_failure(
+                        market_id,
+                        f"Lighter market {market_id} invalid snapshot begin_nonce={begin_nonce}, nonce={nonce}",
+                        book=True,
+                    )
+                try:
+                    self._validate_micro_book_shape(incoming)
+                except ValueError as error:
+                    self._micro_payload_failure(
+                        market_id, f"Lighter market {market_id} malformed snapshot: {error}",
+                        book=True,
+                    )
+                clean = self._clone(update)
+                clean["bids"] = list(incoming["bids"].values())
+                clean["asks"] = list(incoming["asks"].values())
+                self._micro_books[market_id] = clean
+                self._micro_book_acknowledged[market_id] = True
+                self._micro_book_connection_ids[market_id] = self._micro_connection_id
+            else:
+                previous_nonce = self._micro_book_nonces.get(market_id)
+                if (
+                    not self._micro_book_acknowledged.get(market_id, False)
+                    or self._micro_book_connection_ids.get(market_id)
+                    != self._micro_connection_id
+                    or previous_nonce is None
+                    or begin_nonce is None
+                    or begin_nonce != previous_nonce
+                    or nonce < begin_nonce
+                ):
+                    self._micro_payload_failure(
+                        market_id,
+                        f"Lighter market {market_id} order-book nonce gap: "
+                        f"expected begin_nonce {previous_nonce}, received "
+                        f"begin_nonce={begin_nonce}, nonce={nonce}",
+                        book=True,
+                        gap=True,
+                    )
+                try:
+                    current = self._validated_micro_ladders(
+                        self._micro_books[market_id], allow_zero_size=False
+                    )
+                except (KeyError, ValueError) as error:
+                    self._micro_payload_failure(
+                        market_id, f"Lighter market {market_id} cached book invalid: {error}",
+                        book=True,
+                    )
+                for side in ("asks", "bids"):
+                    for price, row in incoming[side].items():
+                        size = self._micro_decimal(
+                            row.get("size"), "order book delta size", allow_zero=True
+                        )
+                        if size == 0:
+                            current[side].pop(price, None)
+                        else:
+                            current[side][price] = dict(row)
+                try:
+                    self._validate_micro_book_shape(current)
+                except ValueError as error:
+                    self._micro_payload_failure(
+                        market_id, f"Lighter market {market_id} malformed merged book: {error}",
+                        book=True,
+                    )
+                book = self._clone(self._micro_books[market_id])
+                book["bids"] = list(current["bids"].values())
+                book["asks"] = list(current["asks"].values())
+                for key, value in update.items():
+                    if key not in {"asks", "bids"}:
+                        book[key] = self._clone(value)
+                self._micro_books[market_id] = book
+            self._micro_book_nonces[market_id] = nonce
+            self._micro_book_valid[market_id] = True
+            self._micro_book_times[market_id] = time.monotonic()
+            self._micro_book_received_ms[market_id] = received_at_ms
+            if exchange_timestamp_ms is not None:
+                self._micro_book_exchange_ms[market_id] = exchange_timestamp_ms
+            self._refresh_micro_warmup(market_id)
+            return
+
+        if message_type in {"subscribed/trade", "update/trade"}:
+            nonce = self._message_int(payload, {}, "nonce")
+            raw = payload.get("trades")
+            liquidations = payload.get("liquidation_trades", [])
+            if nonce is None or nonce < 0:
+                self._micro_payload_failure(
+                    market_id, f"Lighter market {market_id} trade nonce is required",
+                    tape=True,
+                )
+            if not isinstance(raw, list) or not isinstance(liquidations, list):
+                self._micro_payload_failure(
+                    market_id,
+                    f"Lighter market {market_id} trades and liquidation_trades must be lists",
+                    tape=True,
+                )
+            self._micro_liquidation_counts[market_id] = (
+                self._micro_liquidation_counts.get(market_id, 0) + len(liquidations)
+            )
+
+            if message_type == "subscribed/trade":
+                try:
+                    identities = [
+                        self._validate_micro_trade_identity(trade, market_id)[1]
+                        for trade in raw
+                    ]
+                except ValueError as error:
+                    self._micro_payload_failure(
+                        market_id,
+                        f"Lighter market {market_id} malformed trade bootstrap: {error}",
+                        tape=True,
+                    )
+                for trade_id in identities:
+                    if not self._remember_micro_trade_id(market_id, trade_id):
+                        self._micro_duplicate_counts[market_id] = (
+                            self._micro_duplicate_counts.get(market_id, 0) + 1
+                        )
+                self._micro_trade_nonces[market_id] = nonce
+                self._micro_tape_acknowledged[market_id] = True
+                self._micro_tape_valid[market_id] = True
+                self._micro_tape_connection_ids[market_id] = self._micro_connection_id
+                self._micro_tape_times[market_id] = time.monotonic()
+                self._refresh_micro_warmup(market_id)
+                return
+
+            previous_nonce = self._micro_trade_nonces.get(market_id)
+            if previous_nonce is not None and nonce < previous_nonce:
+                self._micro_payload_failure(
+                    market_id,
+                    f"Lighter market {market_id} trade nonce moved backward: "
+                    f"previous={previous_nonce}, received={nonce}",
+                    tape=True,
+                )
+            try:
+                normalized = [
+                    self._normalize_micro_trade(trade, market_id, received_at_ms)
+                    for trade in raw
+                ]
+            except ValueError as error:
+                self._micro_payload_failure(
+                    market_id, f"Lighter market {market_id} malformed live trade: {error}",
+                    tape=True,
+                )
+            acknowledged = (
+                self._micro_book_acknowledged.get(market_id, False)
+                and self._micro_tape_acknowledged.get(market_id, False)
+                and self._micro_book_connection_ids.get(market_id)
+                == self._micro_connection_id
+                and self._micro_tape_connection_ids.get(market_id)
+                == self._micro_connection_id
+            )
+            if not acknowledged:
+                self._micro_pre_ack_trade_counts[market_id] = (
+                    self._micro_pre_ack_trade_counts.get(market_id, 0) + len(normalized)
+                )
+                return
+            bucket = self._micro_trades.setdefault(
+                market_id, deque(maxlen=self.MICRO_TRADE_BUFFER_LIMIT)
+            )
+            for row in normalized:
+                trade_id = row["trade_id_str"]
+                if not self._remember_micro_trade_id(market_id, trade_id):
+                    self._micro_duplicate_counts[market_id] = (
+                        self._micro_duplicate_counts.get(market_id, 0) + 1
+                    )
+                    continue
+                if len(bucket) >= self.MICRO_TRADE_BUFFER_LIMIT:
+                    bucket.popleft()
+                    self._micro_overflow_counts[market_id] = (
+                        self._micro_overflow_counts.get(market_id, 0) + 1
+                    )
+                    self._micro_last_overflow_ms[market_id] = received_at_ms
+                bucket.append(row)
+                self._micro_last_trade_times[market_id] = time.monotonic()
+            self._micro_trade_nonces[market_id] = nonce
+            self._micro_tape_times[market_id] = time.monotonic()
+            self._refresh_micro_warmup(market_id)
+
+    def micro_stream_status(self, market_id: Optional[int] = None) -> Dict[str, Any]:
+        now = time.monotonic()
+        market_ids = [int(market_id)] if market_id is not None else sorted(self._micro_market_ids)
+        markets = {}
+        for item in market_ids:
+            updated = self._micro_book_times.get(item)
+            tape_updated = self._micro_tape_times.get(item)
+            last_trade = self._micro_last_trade_times.get(item)
+            warmup_started = self._micro_warmup_started.get(item)
+            warmup_remaining_ms = self._micro_warmup_remaining_ms(item, now)
+            current_book = bool(
+                self._micro_connected
+                and self._micro_book_connection_ids.get(item) == self._micro_connection_id
+            )
+            current_tape = bool(
+                self._micro_connected
+                and self._micro_tape_connection_ids.get(item) == self._micro_connection_id
+            )
+            markets[str(item)] = {
+                "book_valid": bool(
+                    self._micro_connected
+                    and current_book
+                    and self._micro_book_valid.get(item, False)
+                ),
+                "book_acknowledged": bool(
+                    self._micro_connected
+                    and current_book
+                    and self._micro_book_acknowledged.get(item, False)
+                ),
+                "tape_valid": bool(
+                    self._micro_connected
+                    and current_tape
+                    and self._micro_tape_valid.get(item, False)
+                ),
+                "tape_acknowledged": bool(
+                    self._micro_connected
+                    and current_tape
+                    and self._micro_tape_acknowledged.get(item, False)
+                ),
+                "tape_ready": bool(
+                    current_book
+                    and current_tape
+                    and self._micro_book_valid.get(item, False)
+                    and self._micro_tape_valid.get(item, False)
+                    and self._micro_book_acknowledged.get(item, False)
+                    and self._micro_tape_acknowledged.get(item, False)
+                    and warmup_started is not None
+                    and warmup_remaining_ms == 0
+                ),
+                "quote_age_ms": (max(0, int((now - updated) * 1000)) if updated else None),
+                "tape_age_ms": (
+                    max(0, int((now - tape_updated) * 1000)) if tape_updated else None
+                ),
+                "last_trade_age_ms": (
+                    max(0, int((now - last_trade) * 1000)) if last_trade else None
+                ),
+                "warmup_lookback_ms": int(self._micro_trade_lookback_ms.get(
+                    item, self.MICRO_DEFAULT_TRADE_LOOKBACK_MS
+                )),
+                "warmup_elapsed_ms": (
+                    max(0, int((now - warmup_started) * 1000))
+                    if warmup_started is not None else 0
+                ),
+                "warmup_remaining_ms": warmup_remaining_ms,
+                "nonce": self._micro_book_nonces.get(item) if current_book else None,
+                "trade_nonce": self._micro_trade_nonces.get(item) if current_tape else None,
+                "trade_count_buffered": len(self._micro_trades.get(item, ())),
+                "duplicate_trade_count": self._micro_duplicate_counts.get(item, 0),
+                "malformed_message_count": self._micro_malformed_counts.get(item, 0),
+                "trade_overflow_count": self._micro_overflow_counts.get(item, 0),
+                "ignored_liquidation_count": self._micro_liquidation_counts.get(item, 0),
+                "ignored_pre_ack_trade_count": self._micro_pre_ack_trade_counts.get(item, 0),
+                "book_connection_id": (
+                    self._micro_book_connection_ids.get(item) if current_book else None
+                ),
+                "tape_connection_id": (
+                    self._micro_tape_connection_ids.get(item) if current_tape else None
+                ),
+            }
+        return {
+            "connected": self._micro_connected,
+            "connection_id": self._micro_connection_id,
+            "connection_started_at_ms": self._micro_connection_started_ms,
+            "connection_age_ms": (
+                max(0, int((now - self._micro_connection_started_monotonic) * 1000))
+                if self._micro_connected and self._micro_connection_started_monotonic is not None
+                else None
+            ),
+            "subscriptions_ready": self._micro_subscriptions_ready(),
+            "subscription_timeout_seconds": self.MICRO_SUBSCRIPTION_TIMEOUT_SECONDS,
+            "gap_count": self._micro_gap_count,
+            "malformed_message_count": self._micro_malformed_count,
+            "last_error": self._micro_last_error,
+            "markets": markets,
+        }
+
+    async def micro_market_snapshot(
+        self, market_id: int, depth: int = 20, trade_lookback_ms: int = 5_000,
+    ) -> Dict[str, Any]:
+        """Return one atomic, JSON-safe view of the validated live L2 and tape."""
+        market_id = int(market_id)
+        lookback_ms = max(1, int(trade_lookback_ms))
+        self._micro_trade_lookback_ms[market_id] = lookback_ms
+        if market_id not in self._micro_market_ids:
+            await self.start_micro_streams([market_id])
+        book = self._micro_books.get(market_id)
+        received_at_ms = self._micro_book_received_ms.get(market_id)
+        updated = self._micro_book_times.get(market_id)
+        current_connection = self._micro_connection_id
+        current_book = self._micro_book_connection_ids.get(market_id) == current_connection
+        current_tape = self._micro_tape_connection_ids.get(market_id) == current_connection
+        self._refresh_micro_warmup(market_id)
+        if (
+            not self._micro_connected
+            or not current_book
+            or not current_tape
+            or not self._micro_book_valid.get(market_id, False)
+            or not self._micro_tape_valid.get(market_id, False)
+            or not self._micro_book_acknowledged.get(market_id, False)
+            or not self._micro_tape_acknowledged.get(market_id, False)
+        ):
+            raise RuntimeError(
+                f"Lighter market {market_id} microstructure streams are disconnected, "
+                "unacknowledged, invalid, or from an older connection"
+            )
+        if not book or received_at_ms is None or updated is None:
+            raise RuntimeError(f"Lighter market {market_id} microstructure snapshot is not ready")
+        quote_age_ms = max(0, int((time.monotonic() - updated) * 1000))
+        if quote_age_ms > self.MICRO_BOOK_MAX_AGE_MS:
+            raise RuntimeError(
+                f"Lighter market {market_id} microstructure book is stale: "
+                f"{quote_age_ms}ms > {self.MICRO_BOOK_MAX_AGE_MS}ms"
+            )
+        remaining_ms = self._micro_warmup_remaining_ms(market_id)
+        if remaining_ms > 0:
+            raise RuntimeError(
+                f"Lighter market {market_id} tape is warming up for {remaining_ms}ms"
+            )
+        bounded_depth = min(100, max(1, int(depth)))
+        bids = sorted(
+            book.get("bids") or [], key=lambda row: Decimal(str(row["price"])), reverse=True
+        )[:bounded_depth]
+        asks = sorted(
+            book.get("asks") or [], key=lambda row: Decimal(str(row["price"]))
+        )[:bounded_depth]
+        cutoff = int(time.time() * 1000) - lookback_ms
+        overflow_at_ms = self._micro_last_overflow_ms.get(market_id)
+        if overflow_at_ms is not None and overflow_at_ms >= cutoff:
+            raise RuntimeError(
+                f"Lighter market {market_id} trade buffer overflowed inside the configured lookback"
+            )
+        trades = [dict(row) for row in self._micro_trades.get(market_id, ())
+                  if (int(row.get("received_at_ms", 0)) >= cutoff
+                      and row.get("connection_id") == current_connection)]
+        return {
+            "market_id": market_id,
+            "timestamp_ms": received_at_ms,
+            "received_at_ms": received_at_ms,
+            "exchange_timestamp_ms": self._micro_book_exchange_ms.get(market_id),
+            "source": "LIGHTER_PUBLIC_WS_ORDER_BOOK_TRADE",
+            "connection_id": current_connection,
+            "connection_started_at_ms": self._micro_connection_started_ms,
+            "book_connection_id": self._micro_book_connection_ids.get(market_id),
+            "tape_connection_id": self._micro_tape_connection_ids.get(market_id),
+            "sequence": self._micro_book_nonces.get(market_id),
+            "trade_sequence": self._micro_trade_nonces.get(market_id),
+            "book_valid": bool(self._micro_book_valid.get(market_id, False)),
+            "nonce_contiguous": True,
+            "quote_age_ms": quote_age_ms,
+            "bids": self._clone(bids),
+            "asks": self._clone(asks),
+            "trades": trades,
+            "stream": self.micro_stream_status(market_id),
+        }
 
     async def _stream_loop(self) -> None:
         delay = 1.0
@@ -333,6 +1153,10 @@ class LighterClient:
         return self._session
 
     async def close(self) -> None:
+        if self._micro_ws_task is not None:
+            self._micro_ws_task.cancel()
+            await asyncio.gather(self._micro_ws_task, return_exceptions=True)
+            self._micro_ws_task = None
         if self._ws_task is not None:
             self._ws_task.cancel()
             await asyncio.gather(self._ws_task, return_exceptions=True)

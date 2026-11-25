@@ -17,6 +17,44 @@ Tab 5's live entry-rate control is an execution slicer, not a strategy-signal fr
 Check available margin separately. As in Tab 2, apply the 25% buffer to estimated **initial margin**, not to full order notional: `required margin = max($2.50, next order notional ÷ 10 × 1.25)`. A $150 order therefore needs an estimated $18.75 of available margin, while the exposure check still requires projected account-wide gross notional to stay within the 1× cap. The 10× value is a conservative margin-estimation assumption, not a target leverage or permission to exceed the exposure cap. These are execution/account safeguards, shown separately from optional strategy conditions and without fake switches.
 
 Show projected next-entry account-wide gross leverage, the buffered margin requirement, and estimated account-equity loss under the 10% adverse-move scenario. Label the scenario as an estimate, not a worst-case loss or liquidation threshold; gaps, fees, and liquidation can produce different outcomes. The UI preview may use the requested order notional, but the final server-side checks must use the rounded executable quantity, current quote, fresh collateral, and fresh account positions before ordering.
+
+## Lighter order-flow research exception
+
+The Lighter Order-Flow Lab is a prospective market-data and paper-replay surface,
+not an autonomous live strategy. It has no order-submission endpoint. The tab and
+navigation badge must say `SHADOW ONLY`; its live-market condition column means a
+shadow evaluation of current WebSocket data, not permission to trade. Authenticated
+configuration edits change the same causal evaluator used by subsequent shadow
+decisions and explicit in-memory replay, but the live-enable control remains locked.
+This is an intentional exception to the deployable-strategy rule above until an
+audited executor, durable raw L2 replay, native protection, and the validation gates
+below exist. Do not call it deployed, armed, or live trading before then.
+
+Use a dedicated read-only `order_book/{market}` plus `trade/{market}` WebSocket.
+Validate every `begin_nonce` against the prior `nonce`; reconnect from a full
+snapshot and mark the intervening period unavailable after a gap. Strategy inputs
+are top-N depth imbalance, microprice displacement, public aggressive trade flow,
+short-horizon price momentum, maximum spread, and expected edge after explicit
+round-trip costs. Each optional predicate and threshold remains independently
+editable and returns PAPER and live-market-shadow PASS/WAITING/OFF/UNAVAILABLE with
+source and KST time. Quote freshness, sequence validity, IOC price bounds,
+reconciliation, account exposure, and recovery are non-optional execution
+safeguards and never suppress or fabricate `entry_signals`.
+
+Evaluate every accepted decision snapshot without position, capacity, balance,
+margin, or recovery state and retain every match in `entry_signals`. Paper
+positions may independently suppress simulated fills and drive exits, fees, and
+P&L. Replay is prospective and in-memory until durable raw depth recording is
+implemented; state this limitation and never imply that candle history reconstructs
+past L2. A configuration change or explicit rerun must causally reevaluate retained
+snapshots with the current settings instead of returning signals calculated under
+an older configuration.
+
+Live execution remains locked while any legacy Lighter recovery issue exists and
+until there are at least 30 days and 1,000 causal signals spanning multiple regimes
+with positive out-of-sample results under doubled latency and costs. The first pilot
+starts around 1× gross exposure with a 2× hard cap; high leverage is not a starting
+default or a validation shortcut.
 # Paper/backtest entry signals
 
 Paper and backtest charts have two separate event streams:
