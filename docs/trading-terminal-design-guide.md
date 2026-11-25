@@ -627,6 +627,32 @@ executions remain blocked. Throttle recovery reads to avoid hammering venue
 rate limits; a disabled worker without pending execution must not touch the
 exchange. Explicit operator recovery retains its separately guarded repair path.
 
+## Multi-Span MACD condition matrix
+
+The Multi-Span paper replay organizes MACD conditions as a symmetric matrix.
+Rows are **MACD-H** (histogram) and **MACD-S** (signal line); columns are
+**v sign**, **Δv sign**, **v cross**, **Δv cross**, and **Δ²v sign**. The same
+matrix appears independently for LONG and SHORT on every timeframe. On narrow
+screens the matrix scrolls horizontally instead of changing column meaning or
+dropping conditions.
+
+Every matrix cell is a real, independently toggleable replay rule:
+
+- `v sign` compares the completed value to zero, except MACD-H value may use the
+  applicable adjustable LONG/SHORT histogram threshold.
+- `Δv sign` compares `v[t] - v[t-1]` to zero.
+- `v cross` requires a strict completed-candle zero crossing (`-→+` or `+→-`).
+- `Δv cross` applies the same strict crossing test to the first difference.
+- `Δ²v sign` compares `(v[t] - v[t-1]) - (v[t-1] - v[t-2])` to zero.
+
+The sign control in each cell changes the actual predicate and must update the
+replay, chart condition highlights, independent `entry_signals`, source
+summary, and PASS/WAITING state. Cross cells show the measured previous-to-current
+transition and use `+CROSS`, `−CROSS`, or `NO CROSS`; sign and curvature cells
+show their measured values. Missing warm-up data is UNAVAILABLE, not a false
+PASS. New cells default OFF, and the legacy Full Wave preset keeps its prior
+rule set so adding the matrix does not silently change an existing preset.
+
 ## Multi-Span MA20 ride and hang condition
 
 The Multi-Span paper replay exposes one fixed-direction condition per timeframe:

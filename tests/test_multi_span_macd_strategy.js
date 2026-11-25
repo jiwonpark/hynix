@@ -140,10 +140,10 @@ assert.equal(shortOnlyMarkers[0].signal_only, true);
 
 // Test MACD_RULES definition and legend/DOM elements
 assert.ok(Array.isArray(engine.MACD_RULES), "engine.MACD_RULES must be an array");
-assert.equal(engine.MACD_RULES.length, 11, "engine.MACD_RULES must contain the MACD/MA definitions, RSI, and MA ride/hang");
+assert.equal(engine.MACD_RULES.length, 14, "engine.MACD_RULES must contain the symmetric MACD matrix, MA definitions, RSI, and MA ride/hang");
 const ruleIds = engine.MACD_RULES.map((r) => r.id);
-assert.deepEqual(ruleIds, ["macd_h", "macd_h_cross", "macd_s", "macd_s_diff", "macd_s_diff2", "macd_h_diff", "macd_h_diff_cross", "ma20_diff", "ma50_diff", "rsi", "ma_ride_hang"],
-  "must support MACD/MA dynamics, RSI, and fixed-direction MA ride/hang");
+assert.deepEqual(ruleIds, ["macd_h", "macd_h_diff", "macd_h_cross", "macd_h_diff_cross", "macd_h_diff2", "macd_s", "macd_s_diff", "macd_s_cross", "macd_s_diff_cross", "macd_s_diff2", "ma20_diff", "ma50_diff", "rsi", "ma_ride_hang"],
+  "must support symmetric MACD-H/MACD-S dynamics, MA slopes, RSI, and fixed-direction MA ride/hang");
 const maRideRule = engine.MACD_RULES.find((rule) => rule.id === "ma_ride_hang");
 assert.equal(maRideRule.fixedDirection, true);
 assert.equal(maRideRule.entryLabel, "MA20 ride");
@@ -159,6 +159,13 @@ for (const span of spans) {
 }
 assert.equal((strategyBody.match(/class="condSignToggle"/g) || []).length, spans.length * (engine.MACD_RULES.length - 1) * 2,
   "MA ride/hang rows must not expose a direction switch that could reverse Ride LONG or Hang SHORT");
+assert.equal((strategyBody.match(/class="msMacdConditionMatrix"/g) || []).length, spans.length * 2,
+  "every timeframe must render separate long and short MACD condition matrices");
+assert.equal((strategyBody.match(/msMacdMatrixCell/g) || []).length, spans.length * 10 * 2,
+  "each MACD matrix must expose five real condition columns for both H and S");
+for (const header of ["v sign", "Δv sign", "v cross", "Δv cross", "Δ²v sign"]) {
+  assert.ok(strategyBody.includes(`>${header}</div>`), `matrix must label the ${header} condition column`);
+}
 
 // Test calculateSma and calculateMacd difference and zero-crossing metrics
 const testCandles = [];
@@ -174,15 +181,19 @@ const macdCalc = engine.calculateMacd(testCandles, 12, 26, 9);
 assert.ok(macdCalc.signal.length > 2, "must compute signal line");
 assert.ok(macdCalc.signal[1].diff !== null, "signal line must have diff (1st diff)");
 assert.ok(macdCalc.signal[2].diff2 !== null, "signal line must have diff2 (2nd diff)");
+assert.ok(macdCalc.signal[1].cross !== null, "signal line must have value cross (1, -1, or 0)");
+assert.ok(macdCalc.signal[2].diff_cross !== null, "signal line must have diff cross (1, -1, or 0)");
 assert.ok(macdCalc.histogram[1].diff !== null, "histogram must have diff");
+assert.ok(macdCalc.histogram[2].diff2 !== null, "histogram must have diff2 (2nd diff)");
 assert.ok(macdCalc.histogram[1].cross !== null, "histogram must have cross (1, -1, or 0)");
 assert.ok(macdCalc.histogram[2].diff_cross !== null, "histogram must have diff_cross (1, -1, or 0)");
 
-// Test evaluateMacdStrategyReplay with explicit S, S-diff, S-2nd-diff, H-diff, H-diff-cross, H-cross, MA20-diff, and MA50-diff rules
+// Test evaluateMacdStrategyReplay with symmetric H/S value, diff, cross,
+// diff-cross, curvature, plus MA20/MA50 slope rules.
 const richPoints = [
-  { time: 0, histogram: -1, prev_histogram: null, hist_diff: -0.5, prev_hist_diff: null, hist_cross: 0, hist_diff_cross: 0, signal: -2, signal_diff: 0.1, signal_diff2: 0.05, ma20_diff: -0.2, ma50_diff: -0.1 },
-  { time: DAY, histogram: -0.5, prev_histogram: -1, hist_diff: 0.5, prev_hist_diff: -0.5, hist_cross: 0, hist_diff_cross: 1, signal: -1.8, signal_diff: 0.2, signal_diff2: 0.1, ma20_diff: 0.4, ma50_diff: 0.15 },
-  { time: DAY * 2, histogram: 1, prev_histogram: -0.5, hist_diff: 1.5, prev_hist_diff: 0.5, hist_cross: 1, hist_diff_cross: 0, signal: 0.5, signal_diff: -0.1, signal_diff2: -0.05, ma20_diff: -0.3, ma50_diff: -0.05 },
+  { time: 0, histogram: -1, prev_histogram: null, hist_diff: -0.5, prev_hist_diff: null, hist_diff2: null, hist_cross: 0, hist_diff_cross: 0, signal: -2, prev_signal: null, signal_diff: 0.1, prev_signal_diff: null, signal_diff2: null, signal_cross: 0, signal_diff_cross: 0, ma20_diff: -0.2, ma50_diff: -0.1 },
+  { time: DAY, histogram: -0.5, prev_histogram: -1, hist_diff: 0.5, prev_hist_diff: -0.5, hist_diff2: 1, hist_cross: 0, hist_diff_cross: 1, signal: -1.8, prev_signal: -2, signal_diff: 0.2, prev_signal_diff: 0.1, signal_diff2: 0.1, signal_cross: 0, signal_diff_cross: 0, ma20_diff: 0.4, ma50_diff: 0.15 },
+  { time: DAY * 2, histogram: 1, prev_histogram: -0.5, hist_diff: 1.5, prev_hist_diff: 0.5, hist_diff2: 1, hist_cross: 1, hist_diff_cross: 0, signal: 0.5, prev_signal: -1.8, signal_diff: -0.1, prev_signal_diff: 0.2, signal_diff2: -0.3, signal_cross: 1, signal_diff_cross: -1, ma20_diff: -0.3, ma50_diff: -0.05 },
 ];
 engine.macdData = Object.fromEntries(spans.map((span) => [span, {
   histogram: richPoints.map((p) => ({ time: p.time, value: p.histogram, prev: p.prev_histogram, diff: p.hist_diff, prev_diff: p.prev_hist_diff, cross: p.hist_cross, diff_cross: p.hist_diff_cross })),
@@ -219,7 +230,7 @@ const fullWaveSettings = {
 
 const fullWaveResult = engine.evaluateMacdStrategyReplay(fullWaveSettings, DAY * 4);
 assert.equal(fullWaveResult.error, null);
-assert.equal(fullWaveResult.entry_signals.length, 1, "only candle 1 (DAY) satisfies all 5 entry conditions");
+assert.equal(fullWaveResult.entry_signals.length, 1, "only candle 1 (DAY) satisfies every configured entry condition");
 assert.equal(fullWaveResult.entry_signals[0].time, DAY);
 assert.equal(fullWaveResult.exit_signals.length, 1, "candle 2 (DAY*2) satisfies exit conditions including H crossing +");
 assert.equal(fullWaveResult.trades.length, 1, "1 closed trade completed");
@@ -239,6 +250,21 @@ const crossResult = engine.evaluateMacdStrategyReplay(crossEntrySettings, DAY * 
 assert.equal(crossResult.error, null);
 assert.equal(crossResult.entry_signals.length, 1, "H crossing + matches only when histogram crosses from negative (-0.5) to positive (+1)");
 assert.equal(crossResult.entry_signals[0].time, DAY * 2);
+
+const signalCrossResult = engine.evaluateMacdStrategyReplay({
+  clock_span: "1d",
+  entry_rules: [{ span: "1d", rule: "macd_s_cross", sign: "+" }],
+  exit_rules: [{ span: "1d", rule: "macd_s_diff_cross", sign: "-" }],
+  initial_capital: 10000,
+  fee_bps: 5,
+}, DAY * 4);
+assert.equal(signalCrossResult.error, null);
+assert.deepEqual(signalCrossResult.entry_signals.map((signal) => signal.time), [DAY * 2],
+  "S value-cross + must match the completed candle where S moves from negative to positive");
+assert.deepEqual(signalCrossResult.exit_signals.map((signal) => signal.time), [DAY * 2],
+  "S diff-cross - must match the completed candle where ΔS moves from positive to negative");
+assert.equal(engine.evaluateMacdRuleOnPoint(richPoints[1], { rule: "macd_h_diff2", sign: "+" }, true), true,
+  "H curvature cell must evaluate the real histogram second difference");
 
 // Test per-chart condition candle highlights (span_matches & DOM layer rendering)
 assert.ok(fullWaveResult.span_matches, "replay result must include per-chart span_matches");
@@ -559,4 +585,4 @@ const predictedMaRide = engine.evaluateMacdStrategyReplay({
 assert.match(predictedMaRide.error, /completed candles only/,
   "the UI/replay must clearly reject unsupported parabolic MA ride/hang modeling");
 
-console.log("Multi-span MACD + RSI + MA ride/hang completed-candle paper strategy tests passed");
+console.log("Multi-span MACD matrix + RSI + MA ride/hang completed-candle paper strategy tests passed");
