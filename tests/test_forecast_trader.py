@@ -170,6 +170,16 @@ class ForecastTraderTests(unittest.TestCase):
         py_step = causal_ridge.forecast_step_from_eligible(bars, indicators, rows[source_idx], eligible, norm, source_idx)
         self.assertIsNotNone(py_step)
 
+        pure_model = causal_ridge._fit_ridge_pure(eligible, norm["ridge_lambda"])
+        if causal_ridge.np is not None:
+            np_model = causal_ridge._fit_ridge_numpy(eligible, norm["ridge_lambda"])
+            self.assertIsNotNone(np_model)
+            self.assertAlmostEqual(pure_model["amplitude"], np_model["amplitude"], places=10)
+            self.assertAlmostEqual(pure_model["norm_center"], np_model["norm_center"], places=10)
+            self.assertAlmostEqual(pure_model["norm_sigma"], np_model["norm_sigma"], places=10)
+            for w1, w2 in zip(pure_model["weights"], np_model["weights"]):
+                self.assertAlmostEqual(w1, w2, places=10)
+
         script = (
             "const f = require('./price-forecast-tab.js');"
             "const payload = JSON.parse(require('fs').readFileSync(0, 'utf8'));"

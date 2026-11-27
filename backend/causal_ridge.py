@@ -5,6 +5,11 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover - stdlib fallback always available
+    np = None  # type: ignore[assignment]
+
 from .single_leg_direction import entry_direction_allowed, parse_entry_direction_mode
 
 INTERVAL_SECONDS: Dict[str, int] = {
@@ -431,7 +436,7 @@ def solve_linear_system(matrix: Sequence[Sequence[float]], vector: Sequence[floa
     return [augmented[row][size] for row in range(size)]
 
 
-def fit_ridge(samples: Sequence[Dict[str, Any]], lam: float) -> Optional[Dict[str, Any]]:
+def _fit_ridge_pure(samples: Sequence[Dict[str, Any]], lam: float) -> Optional[Dict[str, Any]]:
     if not samples or not samples[0].get("x"):
         return None
     n = len(samples)
@@ -520,6 +525,68 @@ def fit_ridge(samples: Sequence[Dict[str, Any]], lam: float) -> Optional[Dict[st
     }
 
 
+def _fit_ridge_numpy(samples: Sequence[Dict[str, Any]], lam: float) -> Optional[Dict[str, Any]]:
+    n = len(samples)
+    x_mat = np.asarray([sample["x"] for sample in samples], dtype=np.float64)
+    means = x_mat.mean(axis=0)
+    denom_var = max(1, n - 1)
+    diff = x_mat - means
+    scales = np.maximum(1e-9, np.sqrt((diff * diff).sum(axis=0) / denom_var))
+
+    lam_input = max(0.0, float(lam))
+    target_k = 0.8
+    lam_eff = lam_input * (n / 500.0)
+    off_diag_keep = 1.0 - _clamp(lam_input / (lam_input + 45.0), 0.0, 0.90)
+
+    z_mat = np.tanh(((x_mat - means) / scales) * 0.5) * 2.0
+    y_arr = np.asarray([float(sample["y"]) for sample in samples], dtype=np.float64)
+    scale_arr = np.maximum(2.0, np.asarray([float(sample["scale"]) for sample in samples], dtype=np.float64))
+    y_norm = y_arr / scale_arr
+    y_tanh = np.tanh(y_norm / target_k)
+
+    xtx = z_mat.T @ z_mat
+    xty = z_mat.T @ y_tanh
+    xtx_reg = xtx * off_diag_keep
+    np.fill_diagonal(xtx_reg, np.diag(xtx) + lam_eff)
+    try:
+        weights_arr = np.linalg.solve(xtx_reg, xty)
+        weights = weights_arr.tolist()
+    except np.linalg.LinAlgError:
+        weights = solve_linear_system(xtx_reg.tolist(), xty.tolist())
+        weights_arr = np.asarray(weights, dtype=np.float64)
+
+    train_scores = z_mat @ weights_arr
+    clipped_y = np.clip(y_norm, -2.5, 2.5)
+    num = float(np.dot(train_scores, clipped_y))
+    den = float(np.dot(train_scores, train_scores))
+    amp_raw = num / den if den > 1e-9 else target_k
+    amplitude = _clamp(amp_raw if amp_raw > 0 else target_k, 0.25, 2.5)
+    norm_residuals_arr = y_norm - train_scores * amplitude
+    norm_center = float(np.median(norm_residuals_arr))
+    norm_sigma = float(np.std(norm_residuals_arr, ddof=1)) if n >= 2 else 0.0
+
+    return {
+        "means": means.tolist(),
+        "scales": scales.tolist(),
+        "y_mean": 0.0,
+        "weights": weights,
+        "amplitude": amplitude,
+        "tanh_predict": True,
+        "norm_residuals": norm_residuals_arr.tolist(),
+        "norm_center": norm_center,
+        "norm_sigma": norm_sigma,
+        "sample_count": n,
+    }
+
+
+def fit_ridge(samples: Sequence[Dict[str, Any]], lam: float) -> Optional[Dict[str, Any]]:
+    if not samples or not samples[0].get("x"):
+        return None
+    if np is not None:
+        return _fit_ridge_numpy(samples, lam)
+    return _fit_ridge_pure(samples, lam)
+
+
 def predict_ridge(model: Dict[str, Any], values: Sequence[float], target_scale: float) -> float:
     total = float(model.get("y_mean", 0.0))
     means = model["means"]
@@ -539,13 +606,25 @@ def probability_from_residuals(
     known_center: Optional[float] = None,
     scale_factor: float = 1.0,
 ) -> Dict[str, float]:
+    s = float(scale_factor) or 1.0
+    expected = float(expected_bps)
+    band = float(neutral_bps)
+    if np is not None and len(residuals) > 0:
+        res_arr = np.asarray(residuals, dtype=np.float64)
+        center = float(known_center) if (known_center is not None and _finite(known_center)) else float(np.median(res_arr)) * s
+        centered = res_arr * s - center
+        plus = expected + centered
+        minus = expected - centered
+        up = 1.0 + 0.5 * (int((plus > band).sum()) + int((minus > band).sum()))
+        down = 1.0 + 0.5 * (int((plus < -band).sum()) + int((minus < -band).sum()))
+        total = 3.0 + float(len(res_arr))
+        neutral = total - up - down
+        return {"up": up / total, "neutral": neutral / total, "down": down / total}
+
     up = 1.0
     neutral = 1.0
     down = 1.0
-    s = float(scale_factor) or 1.0
     center = float(known_center) if (known_center is not None and _finite(known_center)) else _median(residuals) * s
-    expected = float(expected_bps)
-    band = float(neutral_bps)
     for res in residuals:
         centered = float(res) * s - center
         plus = expected + centered

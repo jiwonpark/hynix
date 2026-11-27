@@ -1289,9 +1289,13 @@
               <label for="pfUseDailyFilter"><input id="pfUseDailyFilter" class="pfToggle" type="checkbox"${s.use_daily_trend_filter ? " checked" : ""}> 1d MA</label>
               <input id="pfDailyMaPeriod" type="number" min="2" max="200" step="1" value="${s.daily_ma_period}" style="width:64px;">
             </div>
+            <div class="pfField" style="min-width:82px;">
+              <span style="color:#64748b;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;">Hold Streaks</span>
+              <label for="pfHoldSameDirection" style="height:30px;padding:0 8px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#0f172a;font-size:11px;font-weight:700;text-transform:none;letter-spacing:0;cursor:pointer;margin:0;"><input id="pfHoldSameDirection" class="pfToggle" type="checkbox"${s.hold_same_direction ? " checked" : ""}> Hold</label>
+            </div>
             <div class="pfField">
-              <label for="pfHoldSameDirection"><input id="pfHoldSameDirection" class="pfToggle" type="checkbox"${s.hold_same_direction ? " checked" : ""}> Hold Streaks</label>
-              <select id="pfDirectionMode" style="width:108px;">
+              <label for="pfDirectionMode">Direction</label>
+              <select id="pfDirectionMode" style="width:116px;">
                 <option value="two_way"${s.entry_direction_mode === "two_way" ? " selected" : ""}>Two-Way (L+S)</option>
                 <option value="long_only"${s.entry_direction_mode === "long_only" ? " selected" : ""}>Long Only</option>
                 <option value="short_only"${s.entry_direction_mode === "short_only" ? " selected" : ""}>Short Only</option>
@@ -1398,12 +1402,13 @@
     }
 
     featureRowsMarkup(settings) {
+      const inpCss = "height:22px;padding:0 3px;text-align:center;";
       const rows = [
-        ["momentum", "Momentum", `lb <input id="pfMomentumLookback" type="number" min="2" max="50" step="1" value="${settings.momentum_lookback}" style="width:48px;height:22px;">`],
-        ["macd", "MACD H", `<input id="pfMacdFast" type="number" min="2" max="100" value="${settings.macd_fast}" style="width:40px;height:22px;">/<input id="pfMacdSlow" type="number" min="3" max="200" value="${settings.macd_slow}" style="width:40px;height:22px;">/<input id="pfMacdSignal" type="number" min="2" max="100" value="${settings.macd_signal}" style="width:38px;height:22px;">`],
-        ["rsi", "RSI", `p <input id="pfRsiPeriod" type="number" min="2" max="100" value="${settings.rsi_period}" style="width:48px;height:22px;">`],
-        ["ma", "MA + Slope", `<input id="pfMaFast" type="number" min="2" max="200" value="${settings.ma_fast}" style="width:42px;height:22px;">/<input id="pfMaSlow" type="number" min="3" max="400" value="${settings.ma_slow}" style="width:42px;height:22px;">·<input id="pfMaSlope" type="number" min="1" max="50" value="${settings.ma_slope_lookback}" style="width:36px;height:22px;">`],
-        ["volatility", "ATR + Vol", `p <input id="pfAtrPeriod" type="number" min="2" max="100" value="${settings.atr_period}" style="width:48px;height:22px;">`],
+        ["momentum", "Momentum", `lb <input id="pfMomentumLookback" type="number" min="2" max="50" step="1" value="${settings.momentum_lookback}" style="width:48px;${inpCss}">`],
+        ["macd", "MACD H", `<input id="pfMacdFast" type="number" min="2" max="100" value="${settings.macd_fast}" style="width:44px;${inpCss}">/<input id="pfMacdSlow" type="number" min="3" max="200" value="${settings.macd_slow}" style="width:44px;${inpCss}">/<input id="pfMacdSignal" type="number" min="2" max="100" value="${settings.macd_signal}" style="width:42px;${inpCss}">`],
+        ["rsi", "RSI", `p <input id="pfRsiPeriod" type="number" min="2" max="100" value="${settings.rsi_period}" style="width:48px;${inpCss}">`],
+        ["ma", "MA + Slope", `<input id="pfMaFast" type="number" min="2" max="200" value="${settings.ma_fast}" style="width:44px;${inpCss}">/<input id="pfMaSlow" type="number" min="3" max="400" value="${settings.ma_slow}" style="width:46px;${inpCss}">·<input id="pfMaSlope" type="number" min="1" max="50" value="${settings.ma_slope_lookback}" style="width:40px;${inpCss}">`],
+        ["volatility", "ATR + Vol", `p <input id="pfAtrPeriod" type="number" min="2" max="100" value="${settings.atr_period}" style="width:48px;${inpCss}">`],
       ];
       return rows.map(([key, label, controls]) => `
         <div class="pfFeature" data-feature="${key}">
@@ -1559,7 +1564,7 @@
       FEATURE_GROUPS.forEach((group) => document.getElementById(`pfUse_${group}`)?.addEventListener("change", () => this.onSettingsEdited()));
       document.getElementById("pfVenue")?.addEventListener("change", () => this.onVenueOrSymbolChanged());
       document.getElementById("pfSymbol")?.addEventListener("change", () => this.onVenueOrSymbolChanged());
-      document.getElementById("pfInterval")?.addEventListener("change", () => this.onVenueOrSymbolChanged());
+      document.getElementById("pfInterval")?.addEventListener("change", () => this.onIntervalChanged());
       document.getElementById("pfShowSignalsToggle")?.addEventListener("change", (e) => {
         this.showSignalArrows = Boolean(e.target.checked);
         this.renderNativeSignalArrows();
@@ -1633,7 +1638,21 @@
       }
       this.settings = next;
       this.saveSettings();
+      this.loadedMarket = null;
       this.refreshAll({ fit: true, force: true });
+    }
+
+    async onIntervalChanged() {
+      const next = this.readControls();
+      this.settings = next;
+      this.saveSettings();
+      this.loadedMarket = null;
+      this.setStatus(`Loading ${next.symbol} · ${next.interval} completed candles…`);
+      await this.refreshChart({ fit: true });
+      if (this.loadedMarket?.venue === next.venue && this.loadedMarket?.symbol === next.symbol && this.loadedMarket?.interval === next.interval && this.bars.length) {
+        await this.refreshReplay({ force: true });
+      }
+      window.updateMainTabLoading?.("priceforecast");
     }
 
     onSettingsEdited() {
@@ -1663,7 +1682,14 @@
           this.refreshChart({ fit: options.fit !== false }),
         ]);
         if (seq !== this.requestSequence) return;
-        await this.refreshReplay({ force: options.force });
+        const m = this.loadedMarket;
+        const s = this.settings;
+        if (m && m.venue === s.venue && m.symbol === s.symbol && m.interval === s.interval && this.bars.length) {
+          await this.refreshReplay({ force: options.force });
+        } else if (this.errors.chart) {
+          this.errors.replay = this.errors.chart;
+          this.executionChartFrame?.setStatus?.(`Waiting for candles: ${this.errors.chart}`);
+        }
         if (seq !== this.requestSequence) return;
         this.lastLoadedAt = Date.now();
         this.loaded = Boolean(this.bars.length);
@@ -1691,20 +1717,36 @@
     async refreshChart(options = {}) {
       const s = this.settings;
       const chartSeq = (this._chartSeq = (this._chartSeq || 0) + 1);
+      const q = new URLSearchParams({
+        venue: s.venue,
+        symbol: s.symbol,
+        interval: s.interval,
+        limit: "1350",
+        include_daily: "true",
+        daily_ma_period: String(s.daily_ma_period),
+      });
       try {
-        const q = new URLSearchParams({
-          venue: s.venue,
-          symbol: s.symbol,
-          interval: s.interval,
-          limit: "1350",
-          include_daily: "true",
-          daily_ma_period: String(s.daily_ma_period),
-        });
-        const data = await apiGet(`/api/forecast-trader/candles?${q.toString()}`);
-        if (chartSeq !== this._chartSeq) return;
-        if (!data.success || !Array.isArray(data.bars) || !data.bars.length) {
-          throw new Error(data.error || "No candles returned");
+        let data = null;
+        let lastErr = null;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            data = await apiGet(`/api/forecast-trader/candles?${q.toString()}`);
+            if (chartSeq !== this._chartSeq) return;
+            if (!data.success || !Array.isArray(data.bars) || !data.bars.length) {
+              throw new Error(data.error || "No candles returned");
+            }
+            lastErr = null;
+            break;
+          } catch (err) {
+            if (chartSeq !== this._chartSeq) return;
+            lastErr = err;
+            if (attempt === 0) {
+              await new Promise((resolve) => setTimeout(resolve, 500));
+              if (chartSeq !== this._chartSeq) return;
+            }
+          }
         }
+        if (lastErr) throw lastErr;
         this.errors.chart = null;
         this.bars = data.bars;
         this.dailyBars = Array.isArray(data.daily_bars) ? data.daily_bars : [];
@@ -1723,10 +1765,12 @@
         const lastBar = this.bars.at(-1);
         const formingNote = lastBar && lastBar.completed === false ? ` · forming bar closes ${formatKst(lastBar.close_time)}` : "";
         this.setStatus(`${s.symbol} · ${s.interval} · ${completedCount} completed bars · latest completed close ${formatKst(latestCompleted?.close_time)}${formingNote}`);
+        window.updateMainTabLoading?.("priceforecast");
       } catch (err) {
         if (chartSeq !== this._chartSeq) return;
         this.errors.chart = err.message;
         this.setStatus(`Chart unavailable: ${err.message}`, true);
+        window.updateMainTabLoading?.("priceforecast");
       }
     }
 
@@ -1737,7 +1781,7 @@
       try {
         await new Promise((resolve) => setTimeout(resolve, 0));
         if (seq !== this.replaySequence) return;
-        if (!this.bars.length) {
+        if (!this.bars.length || this.loadedMarket?.interval !== s.interval || this.loadedMarket?.symbol !== s.symbol) {
           throw new Error(this.errors.chart || "No completed candles available for replay");
         }
         const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();

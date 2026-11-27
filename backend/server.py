@@ -230,6 +230,7 @@ def _forecast_conflict_checker(venue: str, symbol: str) -> Optional[str]:
     return None
 
 forecast_bot = ForecastTraderBot(binance_client, lighter_client, conflict_checker=_forecast_conflict_checker)
+_forecast_candles_cache: Dict[str, tuple[float, int, Any]] = {}
 _forecast_replay_cache: Dict[str, tuple[float, Any]] = {}
 _crypto_history_task: Optional[asyncio.Task] = None
 _crypto_history_cache: Optional[Dict[str, Any]] = None
@@ -2283,15 +2284,23 @@ async def get_forecast_trader_candles(
     include_daily: bool = True,
     daily_ma_period: int = 20,
 ) -> Dict[str, Any]:
-    """Completed + forming chart candles, completed 1d bars/MA20 overlay, and actual paired fill markers."""
-    try:
-        venue_norm = "lighter" if str(venue).lower() == "lighter" else "binance_futures"
-        interval_norm = interval if interval in {"5m", "15m", "1h", "4h"} else "4h"
-        interval_sec = FORECAST_INTERVAL_SECONDS[interval_norm]
-        sym = forecast_canonical_symbol(venue_norm, symbol)
-        capped = max(60, min(1500, int(limit)))
+    """Completed + forming chart candles, completed 1d bars/MA20 overlay, and paired fill markers."""
+    venue_norm = "lighter" if str(venue).lower() == "lighter" else "binance_futures"
+    interval_norm = interval if interval in {"5m", "15m", "1h", "4h"} else "4h"
+    interval_sec = FORECAST_INTERVAL_SECONDS[interval_norm]
+    sym = forecast_canonical_symbol(venue_norm, symbol)
+    capped = max(60, min(1500, int(limit)))
+    cache_key = f"{venue_norm}:{sym}:{interval_norm}:{capped}:{include_daily}:{int(daily_ma_period)}:{include_markers}"
+    now_sec = time.time()
+    now_mono = time.monotonic()
+    candle_bucket = int(now_sec // interval_sec)
+    fresh_ttl = 30.0 if interval_norm in {"1h", "4h"} else 10.0
 
-        now_sec = time.time()
+    cached_entry = _forecast_candles_cache.get(cache_key)
+    if cached_entry and cached_entry[1] == candle_bucket and (now_mono - cached_entry[0]) < fresh_ttl:
+        return cached_entry[2]
+
+    try:
         if venue_norm == "lighter":
             market_id = FORECAST_LIGHTER_MARKETS[forecast_lighter_symbol(sym)]
             raw_main: List[Dict[str, Any]] = []
@@ -2318,12 +2327,19 @@ async def get_forecast_trader_candles(
             bars = [by_time[k] for k in sorted(by_time)][-capped:]
             d_bars = parse_lighter_candles(raw_daily, "1d", now_sec) if include_daily else []
         else:
-            coros = [get_klines(sym, interval=interval_norm, limit=capped)]
-            if include_daily:
-                coros.append(get_klines(sym, interval="1d", limit=180))
-            res_list = await asyncio.gather(*coros)
-            raw_main = res_list[0]
-            raw_daily = res_list[1] if include_daily else []
+            raw_main = None
+            raw_daily = None
+            for attempt in range(2):
+                coros = [get_klines(sym, interval=interval_norm, limit=capped)]
+                if include_daily:
+                    coros.append(get_klines(sym, interval="1d", limit=180))
+                res_list = await asyncio.gather(*coros)
+                raw_main = res_list[0]
+                raw_daily = res_list[1] if include_daily else []
+                if raw_main:
+                    break
+                if attempt == 0:
+                    await asyncio.sleep(0.2)
             bars = [
                 {
                     "time": int(r[0]) // 1000,
@@ -2335,6 +2351,11 @@ async def get_forecast_trader_candles(
                 for r in (raw_main or [])
             ]
             d_bars = parse_binance_klines(raw_daily, "1d", now_sec) if include_daily else []
+
+        if not bars and cached_entry and (now_mono - cached_entry[0]) < 600.0:
+            return {**cached_entry[2], "stale": True}
+        if not bars:
+            return {"success": False, "bars": [], "daily_bars": [], "daily_ma_series": [], "markers": [], "error": f"No {interval_norm} candles returned for {sym}"}
 
         bars.sort(key=lambda b: b["time"])
         d_bars.sort(key=lambda b: b["time"])
@@ -2351,10 +2372,9 @@ async def get_forecast_trader_candles(
 
         markers = []
         if bars and include_markers:
-            try:
-                rec = await asyncio.wait_for(forecast_bot.reconciled_public_state(), timeout=2.0)
-            except Exception:
-                rec = forecast_bot.public_state()
+            # Read persisted/latest public state without blocking candle loads on Binance userTrades RPC;
+            # live reconciliation runs on /status and the background worker.
+            rec = forecast_bot.public_state()
             first_t, last_t = bars[0]["time"], bars[-1]["time"]
             for event in rec.get("execution_history") or []:
                 if forecast_canonical_symbol(venue_norm, event.get("symbol", "")) != sym:
@@ -2392,7 +2412,7 @@ async def get_forecast_trader_candles(
                         else f"ACTUAL {'ENTRY' if is_entry else 'EXIT'} {sym} @ ${price:,.2f} · {event.get('reason', '')}"
                     ),
                 })
-        return {
+        payload = {
             "success": True,
             "venue": venue_norm,
             "symbol": sym,
@@ -2402,8 +2422,12 @@ async def get_forecast_trader_candles(
             "daily_ma_series": daily_ma_series,
             "markers": markers,
         }
+        _forecast_candles_cache[cache_key] = (now_mono, candle_bucket, payload)
+        return payload
     except Exception as exc:
         logger.exception("Error building /api/forecast-trader/candles")
+        if cached_entry and (now_mono - cached_entry[0]) < 600.0:
+            return {**cached_entry[2], "stale": True}
         return {"success": False, "bars": [], "daily_bars": [], "daily_ma_series": [], "markers": [], "error": str(exc)}
 
 
@@ -2483,7 +2507,7 @@ async def get_forecast_trader_replay(
         cache_key = json.dumps({**params, "notional_usd": notional_usd, "leverage": leverage, "limit": limit}, sort_keys=True)
         now = time.monotonic()
         cached = _forecast_replay_cache.get(cache_key)
-        if cached and now - cached[0] < 15.0:
+        if cached and now - cached[0] < 60.0:
             return cached[1]
         bars, d_bars = await forecast_bot._fetch_candles_for_venue(venue_norm, sym, interval_norm, limit_main=1350, limit_daily=180)
         result = await run_backtest_compute(
