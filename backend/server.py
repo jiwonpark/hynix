@@ -50,6 +50,8 @@ from .hourly_histogram import (
 )
 from .single_leg_take_profit import net_profit, stop_loss_status, trailing_stop_status
 from .crypto_bot import CryptoBot
+from .causal_ridge import INTERVAL_SECONDS as FORECAST_INTERVAL_SECONDS, parse_binance_klines, parse_lighter_candles, run_causal_replay, simple_moving_average
+from .forecast_bot import ForecastTraderBot, LIGHTER_MARKETS as FORECAST_LIGHTER_MARKETS, canonical_symbol as forecast_canonical_symbol, to_binance_symbol as forecast_binance_symbol, to_lighter_symbol as forecast_lighter_symbol
 from .lighter_client import LighterClient
 from .lighter_crypto_bot import LighterCryptoBot, MARKETS as LIGHTER_CRYPTO_MARKETS
 from .lighter_bot import LighterPairBot
@@ -214,6 +216,21 @@ lighter_client = LighterClient()
 lighter_pair_bot = LighterPairBot(lighter_client)
 lighter_crypto_bot = LighterCryptoBot(lighter_client)
 lighter_micro_runtime = LighterMicroRuntime(lighter_client)
+
+def _forecast_conflict_checker(venue: str, symbol: str) -> Optional[str]:
+    sym = forecast_canonical_symbol(venue, symbol)
+    if venue == "binance_futures":
+        c_state = crypto_bot.public_state()
+        if c_state.get("selected_symbol") == sym and (c_state.get("enabled") or c_state.get("tranches")):
+            return f"Tab 4 crypto_bot already owns Binance Futures {sym}; pick another symbol (e.g. ETHUSDT) or pause/flatten Tab 4 first"
+    elif venue == "lighter":
+        l_state = lighter_crypto_bot.public_state()
+        if l_state.get("selected_symbol") == sym and (l_state.get("enabled") or l_state.get("tranches") or l_state.get("recovery_required")):
+            return f"Tab 5 lighter_crypto_bot has active/unreconciled Lighter {sym} inventory; reconcile or switch symbols first"
+    return None
+
+forecast_bot = ForecastTraderBot(binance_client, lighter_client, conflict_checker=_forecast_conflict_checker)
+_forecast_replay_cache: Dict[str, tuple[float, Any]] = {}
 _crypto_history_task: Optional[asyncio.Task] = None
 _crypto_history_cache: Optional[Dict[str, Any]] = None
 _crypto_history_cache_time = 0.0
@@ -841,6 +858,16 @@ async def lighter_crypto_bot_worker():
         await asyncio.sleep(5)
 
 
+async def forecast_bot_worker():
+    """Evaluate Tab 11 Causal Ridge + 1d MA20 bot on completed candles."""
+    while True:
+        try:
+            await forecast_bot.run_once()
+        except Exception:
+            logger.exception("Forecast bot worker failed")
+        await asyncio.sleep(5)
+
+
 async def lighter_micro_worker():
     """Record and paper-evaluate BTC L2/tape without submitting exchange orders."""
     while True:
@@ -881,6 +908,7 @@ async def lifespan(app: FastAPI):
         await lighter_client.start_micro_streams([1])
         await crypto_bot.verify_startup()
         await lighter_crypto_bot.verify_startup()
+        await forecast_bot.verify_startup()
         background_tasks = [
             asyncio.create_task(account_broadcaster()),
             asyncio.create_task(auto_tranche_worker()),
@@ -889,6 +917,7 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(lighter_pair_worker()),
             asyncio.create_task(crypto_bot_worker()),
             asyncio.create_task(lighter_crypto_bot_worker()),
+            asyncio.create_task(forecast_bot_worker()),
             asyncio.create_task(lighter_micro_worker()),
             asyncio.create_task(realized_history_worker(_refresh_crypto_history_snapshot)),
             asyncio.create_task(realized_history_worker(_refresh_lighter_crypto_history_snapshot)),
@@ -931,6 +960,7 @@ async def authorize_strategy_lab(request: Request, call_next):
         "/api/crypto/flatten", "/api/crypto/order",
         "/api/lighter-crypto/bot/", "/api/lighter-crypto/step_tranche",
         "/api/lighter-crypto/reduce_tranche", "/api/lighter-crypto/flatten",
+        "/api/forecast-trader/",
         "/api/lighter-micro/",
         "/api/trade/update_scaling", "/api/trade/update_entry_rate",
     )
@@ -2101,6 +2131,414 @@ async def flatten_crypto(request: Request) -> JSONResponse:
         return JSONResponse({"success": True, "message": "Bot-owned Binance Futures inventory flattened and bot paused", **result})
     except Exception as error:
         return JSONResponse({"success": False, "error": str(error), "bot": crypto_bot.public_state()}, status_code=400)
+
+
+@app.get("/api/forecast-trader/status")
+async def get_forecast_trader_status() -> Dict[str, Any]:
+    """Read-only authenticated account, live bot state, and conflict safety status for Tab 11."""
+    try:
+        try:
+            bot = await asyncio.wait_for(forecast_bot.reconciled_public_state(), timeout=2.0)
+        except Exception:
+            bot = forecast_bot.public_state()
+        venue = bot["venue"]
+        symbol = bot["selected_symbol"]
+        conflict_message = _forecast_conflict_checker(venue, symbol)
+        account_info: Dict[str, Any] = {
+            "authenticated": False,
+            "venue_label": "Lighter DEX (0-Fee)" if venue == "lighter" else "Binance Futures",
+            "currency": "USDC" if venue == "lighter" else "USDT",
+            "equity": None,
+            "available_margin": None,
+            "account_gross_notional": None,
+            "selected_gross_notional": 0.0,
+            "unrealized_pnl": 0.0,
+            "positions": [],
+            "other_positions": [],
+            "stale": True,
+            "updated_ms": None,
+            "source": None,
+            "error": None,
+        }
+        if venue == "lighter":
+            snapshot = lighter_client.account_telemetry_snapshot()
+            if snapshot and snapshot.get("account"):
+                acc = snapshot["account"]
+                positions = acc.get("positions") or []
+                if isinstance(positions, dict):
+                    positions = list(positions.values())
+                market_id = FORECAST_LIGHTER_MARKETS.get(forecast_lighter_symbol(symbol))
+                collateral = _lighter_finite_number(acc.get("collateral"), nonnegative=True)
+                allocated = 0.0
+                acct_gross = 0.0
+                sel_gross = 0.0
+                sel_positions = []
+                other_positions = []
+                upnl = 0.0
+                for pos in positions:
+                    raw_val = pos.get("position") if pos.get("position") not in (None, "") else pos.get("size")
+                    qty = abs(float(_lighter_finite_number(raw_val) or 0.0))
+                    allocated += abs(float(_lighter_finite_number(pos.get("allocated_margin")) or 0.0))
+                    if qty <= 0:
+                        continue
+                    sign = int(_lighter_finite_number(pos.get("sign")) or 1)
+                    val = abs(float(_lighter_finite_number(pos.get("position_value")) or 0.0))
+                    mark = float(_lighter_finite_number(pos.get("mark_price") or pos.get("avg_entry_price")) or 0.0)
+                    notional = val or qty * mark
+                    pos_upnl = float(_lighter_finite_number(pos.get("unrealized_pnl")) or 0.0)
+                    acct_gross += notional
+                    item = {
+                        "symbol": pos.get("symbol") or symbol,
+                        "side": "LONG" if sign > 0 else "SHORT",
+                        "sign": sign,
+                        "size": qty,
+                        "entry_price": float(_lighter_finite_number(pos.get("avg_entry_price")) or 0.0),
+                        "mark_price": mark,
+                        "notional": notional,
+                        "initial_margin": abs(float(_lighter_finite_number(pos.get("allocated_margin")) or 0.0)),
+                        "unrealized_pnl": pos_upnl,
+                    }
+                    if int(pos.get("market_id", -1)) == market_id:
+                        sel_positions.append(item)
+                        sel_gross += notional
+                        upnl += pos_upnl
+                    else:
+                        other_positions.append(item)
+                account_info.update(
+                    authenticated=True,
+                    equity=collateral,
+                    available_margin=max(0.0, collateral - allocated) if collateral is not None else None,
+                    account_gross_notional=acct_gross,
+                    selected_gross_notional=sel_gross,
+                    unrealized_pnl=upnl,
+                    positions=sel_positions,
+                    other_positions=other_positions,
+                    stale=False,
+                    updated_ms=snapshot.get("updated_at_ms"),
+                    source="LIGHTER_ACCOUNT_STREAM",
+                    error=None if (collateral or 0) > 1.0 else f"Lighter collateral ${(collateral or 0):.2f} USDC too low for orders",
+                )
+            else:
+                account_info["error"] = "Lighter account telemetry unavailable"
+        else:
+            telemetry = await binance_client.get_detailed_account_telemetry()
+            if telemetry.get("authenticated"):
+                summary = telemetry.get("summary") or {}
+                positions = telemetry.get("positions") or []
+                sel_sym = forecast_binance_symbol(symbol)
+                sel_positions = []
+                other_positions = []
+                acct_gross = 0.0
+                sel_gross = 0.0
+                upnl = 0.0
+                for pos in positions:
+                    qty = abs(float(pos.get("position_amt", 0.0) or 0.0))
+                    if qty <= 0:
+                        continue
+                    notional = abs(float(pos.get("notional", 0.0) or 0.0))
+                    acct_gross += notional
+                    if pos.get("symbol") == sel_sym:
+                        sel_positions.append(pos)
+                        sel_gross += notional
+                        upnl += float(pos.get("unrealized_pnl", 0.0) or 0.0)
+                    else:
+                        other_positions.append(pos)
+                account_info.update(
+                    authenticated=True,
+                    equity=summary.get("total_equity_usd"),
+                    available_margin=summary.get("available_margin_usd"),
+                    account_gross_notional=acct_gross,
+                    selected_gross_notional=sel_gross,
+                    unrealized_pnl=upnl,
+                    positions=sel_positions,
+                    other_positions=other_positions,
+                    stale=bool(telemetry.get("stale", False)),
+                    updated_ms=telemetry.get("timestamp"),
+                    source="BINANCE_FUTURES_ACCOUNT",
+                )
+            else:
+                account_info["error"] = telemetry.get("error") or "Binance Futures account unavailable"
+
+        return {
+            "success": True,
+            "venue": venue,
+            "symbol": symbol,
+            "bot": bot,
+            "account": account_info,
+            "conflict_message": conflict_message,
+            "server_time_ms": int(time.time() * 1000),
+        }
+    except Exception as exc:
+        logger.exception("Error building /api/forecast-trader/status")
+        return {"success": False, "error": str(exc), "bot": forecast_bot.public_state(), "server_time_ms": int(time.time() * 1000)}
+
+
+@app.get("/api/forecast-trader/candles")
+async def get_forecast_trader_candles(
+    venue: str = "binance_futures",
+    symbol: str = "ETHUSDT",
+    interval: str = "4h",
+    limit: int = 500,
+    include_markers: bool = True,
+    daily_ma_period: int = 20,
+) -> Dict[str, Any]:
+    """Completed + forming chart candles, stepped 1d MA overlay, and actual paired fill markers."""
+    try:
+        venue_norm = "lighter" if str(venue).lower() == "lighter" else "binance_futures"
+        interval_norm = interval if interval in {"5m", "15m", "1h", "4h"} else "4h"
+        interval_sec = FORECAST_INTERVAL_SECONDS[interval_norm]
+        sym = forecast_canonical_symbol(venue_norm, symbol)
+        capped = max(60, min(1000, int(limit)))
+
+        now_sec = time.time()
+        if venue_norm == "lighter":
+            market_id = FORECAST_LIGHTER_MARKETS[forecast_lighter_symbol(sym)]
+            raw_main = await lighter_client.candles(market_id, interval_norm, min(500, capped), fresh=False)
+            raw_daily = await lighter_client.candles(market_id, "1d", 120, fresh=False)
+            bars = []
+            for row in raw_main or []:
+                t_raw = int(row["t"])
+                t_open = t_raw // 1000 if t_raw > 10_000_000_000 else t_raw
+                bars.append({
+                    "time": t_open, "close_time": t_open + interval_sec,
+                    "open": float(row["o"]), "high": float(row["h"]), "low": float(row["l"]), "close": float(row["c"]),
+                    "value": float(row["c"]), "volume": float(row.get("v", 0) or 0),
+                    "completed": (t_open + interval_sec) <= now_sec,
+                })
+            d_bars = parse_lighter_candles(raw_daily, "1d", now_sec)
+        else:
+            raw_main, raw_daily = await asyncio.gather(
+                get_klines(sym, interval=interval_norm, limit=capped),
+                get_klines(sym, interval="1d", limit=120),
+            )
+            bars = [
+                {
+                    "time": int(r[0]) // 1000,
+                    "close_time": int(r[6]) // 1000,
+                    "open": float(r[1]), "high": float(r[2]), "low": float(r[3]), "close": float(r[4]),
+                    "value": float(r[4]), "volume": float(r[5] or 0),
+                    "completed": (int(r[6]) // 1000) <= now_sec,
+                }
+                for r in (raw_main or [])
+            ]
+            d_bars = parse_binance_klines(raw_daily, "1d", now_sec)
+
+        bars.sort(key=lambda b: b["time"])
+        d_bars.sort(key=lambda b: b["time"])
+        d_closes = [b["close"] for b in d_bars]
+        d_ma = simple_moving_average(d_closes, max(2, min(200, int(daily_ma_period))))
+        daily_ma_series = []
+        if bars and d_bars:
+            d_ptr = 0
+            for bar in bars:
+                while d_ptr + 1 < len(d_bars) and d_bars[d_ptr + 1]["close_time"] <= bar["close_time"]:
+                    d_ptr += 1
+                if d_bars[d_ptr]["close_time"] <= bar["close_time"] and d_ma[d_ptr] is not None:
+                    daily_ma_series.append({"time": bar["time"], "value": float(d_ma[d_ptr])})
+
+        markers = []
+        if bars and include_markers:
+            try:
+                rec = await asyncio.wait_for(forecast_bot.reconciled_public_state(), timeout=2.0)
+            except Exception:
+                rec = forecast_bot.public_state()
+            first_t, last_t = bars[0]["time"], bars[-1]["time"]
+            for event in rec.get("execution_history") or []:
+                if forecast_canonical_symbol(venue_norm, event.get("symbol", "")) != sym:
+                    continue
+                trade_time = int(event.get("time", 0) or 0)
+                bar_time = trade_time // interval_sec * interval_sec
+                if not (first_t <= bar_time <= last_t):
+                    continue
+                is_entry = event.get("event") == "ENTRY"
+                verified_exit = not is_entry and bool(event.get("pnl_authoritative"))
+                original_side = int(event.get("original_side", event.get("side", 0)))
+                price = float(event.get("price", 0.0) or 0.0)
+                net_pnl = float(event["net_pnl_usd"]) if verified_exit else None
+                markers.append({
+                    "time": bar_time,
+                    "source": "actual",
+                    "is_entry": is_entry,
+                    "is_exit": not is_entry,
+                    "side": int(event.get("side", 0)),
+                    "direction": "long" if original_side > 0 else "short",
+                    "ratio": price,
+                    "entry_price": float(event.get("entry_price", price)),
+                    "exit_price": price if not is_entry else None,
+                    "qty": float(event.get("qty", 0.0)),
+                    "notional": float(event.get("notional_usd", 0.0)),
+                    "pairKey": str(event.get("entry_order_id") or event.get("order_id")),
+                    "pnl": net_pnl,
+                    "pnl_pct": float(event["pnl_pct"]) if verified_exit else None,
+                    "pnl_authoritative": verified_exit,
+                    "gross_pnl_usd": float(event["gross_pnl_usd"]) if verified_exit else None,
+                    "round_trip_fee_usd": float(event["round_trip_fee_usd"]) if verified_exit else None,
+                    "hoverText": (
+                        f"ACTUAL EXIT {sym} @ ${price:,.2f} · net {net_pnl:+.2f}"
+                        if verified_exit
+                        else f"ACTUAL {'ENTRY' if is_entry else 'EXIT'} {sym} @ ${price:,.2f} · {event.get('reason', '')}"
+                    ),
+                })
+        return {
+            "success": True,
+            "venue": venue_norm,
+            "symbol": sym,
+            "interval": interval_norm,
+            "bars": bars,
+            "daily_ma_series": daily_ma_series,
+            "markers": markers,
+        }
+    except Exception as exc:
+        logger.exception("Error building /api/forecast-trader/candles")
+        return {"success": False, "bars": [], "daily_ma_series": [], "markers": [], "error": str(exc)}
+
+
+@app.get("/api/forecast-trader/replay")
+async def get_forecast_trader_replay(
+    venue: str = "binance_futures",
+    symbol: str = "ETHUSDT",
+    interval: str = "4h",
+    horizon_bars: int = 1,
+    neutral_bps: float = 8.0,
+    confidence_pct: float = 49.0,
+    ridge_lambda: float = 400.0,
+    train_window: int = 1000,
+    min_train_samples: int = 180,
+    cost_bps: float = 10.0,
+    use_daily_trend_filter: bool = True,
+    daily_ma_period: int = 20,
+    hold_same_direction: bool = True,
+    entry_direction_mode: str = "two_way",
+    use_stop_loss: bool = False,
+    stop_loss_pct: float = 3.0,
+    momentum_lookback: int = 6,
+    macd_fast: int = 12,
+    macd_slow: int = 26,
+    macd_signal: int = 9,
+    rsi_period: int = 14,
+    ma_fast: int = 20,
+    ma_slow: int = 50,
+    ma_slope_lookback: int = 3,
+    atr_period: int = 14,
+    use_momentum: bool = True,
+    use_macd: bool = True,
+    use_rsi: bool = True,
+    use_ma: bool = True,
+    use_volatility: bool = True,
+    notional_usd: float = 200.0,
+    leverage: float = 1.0,
+    limit: int = 360,
+) -> Dict[str, Any]:
+    """Causal paper replay returning position-independent entry_signals, entry_trend, and paired paper trades."""
+    try:
+        venue_norm = "lighter" if str(venue).lower() == "lighter" else "binance_futures"
+        interval_norm = interval if interval in {"5m", "15m", "1h", "4h"} else "4h"
+        sym = forecast_canonical_symbol(venue_norm, symbol)
+        params = {
+            "venue": venue_norm,
+            "symbol": sym,
+            "interval": interval_norm,
+            "horizon_bars": horizon_bars,
+            "neutral_bps": neutral_bps,
+            "confidence_pct": confidence_pct,
+            "ridge_lambda": ridge_lambda,
+            "train_window": train_window,
+            "min_train_samples": min_train_samples,
+            "cost_bps": cost_bps,
+            "use_daily_trend_filter": use_daily_trend_filter,
+            "daily_ma_period": daily_ma_period,
+            "hold_same_direction": hold_same_direction,
+            "entry_direction_mode": entry_direction_mode,
+            "use_stop_loss": use_stop_loss,
+            "stop_loss_pct": stop_loss_pct,
+            "momentum_lookback": momentum_lookback,
+            "macd_fast": macd_fast,
+            "macd_slow": macd_slow,
+            "macd_signal": macd_signal,
+            "rsi_period": rsi_period,
+            "ma_fast": ma_fast,
+            "ma_slow": ma_slow,
+            "ma_slope_lookback": ma_slope_lookback,
+            "atr_period": atr_period,
+            "use_momentum": use_momentum,
+            "use_macd": use_macd,
+            "use_rsi": use_rsi,
+            "use_ma": use_ma,
+            "use_volatility": use_volatility,
+        }
+        cache_key = json.dumps({**params, "notional_usd": notional_usd, "leverage": leverage, "limit": limit}, sort_keys=True)
+        now = time.monotonic()
+        cached = _forecast_replay_cache.get(cache_key)
+        if cached and now - cached[0] < 15.0:
+            return cached[1]
+        bars, d_bars = await forecast_bot._fetch_candles_for_venue(venue_norm, sym, interval_norm, limit_main=1350, limit_daily=180)
+        result = await run_backtest_compute(
+            run_causal_replay,
+            bars,
+            d_bars,
+            params,
+            notional_usd=float(notional_usd),
+            leverage=float(leverage),
+            max_eval_bars=max(120, min(600, int(limit))),
+            initial_equity_usd=float(notional_usd),
+        )
+        payload = {"success": result.get("error") is None, "venue": venue_norm, "symbol": sym, "interval": interval_norm, **result}
+        if result.get("error") is None:
+            _forecast_replay_cache[cache_key] = (now, payload)
+        return payload
+    except Exception as exc:
+        logger.exception("Error building /api/forecast-trader/replay")
+        return {"success": False, "error": str(exc), "entry_signals": [], "trades": [], "markers": []}
+
+
+@app.post("/api/forecast-trader/config")
+async def configure_forecast_trader(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        body = await request.json()
+        bot = await forecast_bot.configure(body)
+        _forecast_replay_cache.clear()
+        return JSONResponse({"success": True, "bot": bot})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+
+@app.post("/api/forecast-trader/toggle")
+async def toggle_forecast_trader(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        body = await request.json()
+        enabled = bool(body.get("enabled", False))
+        if enabled and body.get("confirm_live_trading") is not True:
+            raise ValueError("Explicit confirmation required to arm autonomous live orders")
+        bot = await forecast_bot.toggle(enabled)
+        return JSONResponse({"success": True, "bot": bot})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+
+@app.post("/api/forecast-trader/reconcile")
+async def reconcile_forecast_trader(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        bot = await forecast_bot.reconcile()
+        return JSONResponse({"success": True, "bot": bot})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+
+@app.post("/api/forecast-trader/flatten")
+async def flatten_forecast_trader(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        bot = await forecast_bot.flatten()
+        return JSONResponse({"success": True, "message": "Forecast Trader position closed and bot paused", "bot": bot})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error), "bot": forecast_bot.public_state()}, status_code=400)
 
 
 def _lighter_micro_decorated_conditions(

@@ -108,26 +108,28 @@ assert.equal(forecast.formatKstTick(kstMidnightEpoch, 3), "11-16", "chart tick f
 assert.equal(forecast.formatKstTick(kstMidnightEpoch + 3600, 3), "01:00", "chart tick formatter must render KST HH:MM rather than UTC");
 
 const source = fs.readFileSync(modulePath, "utf8");
-assert.match(source, /RESEARCH ONLY · NO ORDERS/,
-  "forecast tab must not imply that model output is live execution");
-assert.match(source, /completed candles only · forming candle excluded/,
-  "forecast timing must disclose its completed-candle source");
-assert.match(source, /forecast_signals: forecastSignals/,
-  "historical forecast outputs must be a distinct position-independent stream");
+assert.doesNotMatch(source, /RESEARCH ONLY · NO ORDERS/,
+  "streamlined Tab 11 must remove research-only badge clutter");
+assert.doesNotMatch(source, /pfForecastRows|pfRankIc|pfBrier/,
+  "non-essential walk-forward research KPIs/table must be removed");
+assert.match(source, /completed 4h candles|completed.*bar/,
+  "UI must disclose completed-candle evaluation vs forming bar");
+assert.match(source, /pfTradeTrianglesLayer/,
+  "Tab 11 chart must include Tab 4 SVG paired trade triangles layer");
+assert.match(source, /pfHistoryBody/,
+  "Tab 11 must include Tab 4-style Historical Trades table");
+assert.match(source, /terminal-action-control/,
+  "live bot buttons must integrate with fail-closed read-only lock");
 assert.match(source, /value !== null && value !== undefined && value !== ""/,
   "numeric guards must reject null indicator warm-up values");
-assert.match(source, /@media \(max-width:900px\)[\s\S]*?\.pfGrid \{ display:block; \}/,
-  "the forecast chart must collapse to a true single-column mobile layout");
+assert.match(source, /@media \(max-width:980px\)[\s\S]*?\.pfGrid \{ display:block; \}/,
+  "the chart and condition grid must collapse cleanly on mobile");
 assert.match(source, /localization:\s*\{\s*locale:\s*"ko-KR",\s*timeFormatter:/,
-  "forecast chart must enable KST timeFormatter localization");
-assert.match(source, /tickMarkFormatter:\s*\(time,\s*tickMarkType\)\s*=>\s*formatKstTick/,
-  "forecast chart timeScale must format tick marks in KST");
-assert.match(source, /text-transform:none;">σ<\/i>/,
-  "Residual σ label must keep lowercase sigma rather than uppercasing to Σ");
+  "chart must enable KST timeFormatter localization");
+assert.match(source, /tickMarkFormatter:\s*\(t,\s*type\)\s*=>\s*formatKstTick/,
+  "chart timeScale must format tick marks in KST");
 assert.match(source, /loadedMarket/,
-  "forecast controller must isolate loadedMarket from unvalidated symbol/interval edits");
-assert.match(source, /directFailUntil/,
-  "forecast loader must apply proxy cooldown after direct fapi failures");
+  "controller must track loadedMarket separately from pending UI selections");
 
 const featureMarkup = forecast.featureRowsMarkup(settings);
 for (const group of ["momentum", "macd", "rsi", "ma", "volatility"]) {

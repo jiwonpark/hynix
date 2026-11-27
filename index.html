@@ -3111,10 +3111,10 @@
       <button id="navTabPriceForecast" class="mainNavBtn" type="button">
         <span class="navBtnIcon">⌁</span>
         <div class="navBtnText">
-          <strong>Causal Price Forecast</strong>
-          <small>Up · Neutral · Down Probability</small>
+          <strong>4h Quant Trader</strong>
+          <small>4h Causal Ridge + 1d MA20</small>
         </div>
-        <span class="navLivePill" style="background:#0891b2;color:#fff;">MODEL</span>
+        <span id="navPillForecastTrader" class="navLivePill" style="background:#0891b2;color:#fff;">4H</span>
       </button>
     </nav>
 
@@ -5374,9 +5374,9 @@
     <div id="tabContentMultiSpan" class="mainTabLoading" data-loading-message="Loading multi-span charts…" aria-busy="true" style="display:none;"></div>
 
     <!-- ======================================================= -->
-    <!-- TAB 11: CAUSAL PRICE FORECAST RESEARCH                  -->
+    <!-- TAB 11: 4H CAUSAL RIDGE + 1D MA20 TRADER                -->
     <!-- ======================================================= -->
-    <div id="tabContentPriceForecast" class="mainTabLoading" data-loading-message="Loading completed candles and causal forecast…" aria-busy="true" style="display:none;"></div>
+    <div id="tabContentPriceForecast" class="terminal-read-only mainTabLoading" data-loading-message="Loading live account, 4h candles, and causal replay…" aria-busy="true" style="display:none;"></div>
 
     <footer style="margin-top: 24px; padding: 14px 8px 0; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">HYPERION &middot; Quantitative Trading System &middot; Dual-Leg Parity Engine</span>
@@ -5463,7 +5463,7 @@
   <script src="lighter-crypto-tab.js?v=20261019_chart_fix2"></script>
   <script src="lighter-micro-tab.js?v=20261125_orderflow_lab"></script>
   <script src="multi-span-tab.js?v=20261124_rsi_strategy"></script>
-  <script src="price-forecast-tab.js?v=20261127_causal_forecast_v2"></script>
+  <script src="price-forecast-tab.js?v=20261127_4h_quant_trader_v1"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.
@@ -11344,7 +11344,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       strategylab: { id: "tabContentStrategyLab", ready: () => Boolean(window.strategyLab?.loaded && window.strategyLab?.data?.bars?.length) },
       upbitscanner: { id: "tabContentUpbitScanner", ready: () => Boolean(upbitCoinScanner?.loaded && upbitCoinScanner?.rows?.length) },
       multispan: { id: "tabContentMultiSpan", ready: () => Boolean(window.multiSpanTab?.loaded) },
-      priceforecast: { id: "tabContentPriceForecast", ready: () => Boolean(window.priceForecastTab?.loaded && window.priceForecastTab?.bars?.length) },
+      priceforecast: { id: "tabContentPriceForecast", title: "4h Quant Trader", parts: () => [progressPart("Chart + 1d MA", window.priceForecastTab?.bars?.length, `${window.priceForecastTab?.bars?.length || 0} bars`, Boolean(window.priceForecastTab?.errors?.chart)), progressPart("Account + positions", window.priceForecastTab?.statusPayload?.success === true, window.priceForecastTab?.errors?.status || window.priceForecastTab?.statusPayload?.error || "", Boolean(window.priceForecastTab?.errors?.status)), progressPart("Replay + signals", Boolean(window.priceForecastTab?.replayPayload?.success), window.priceForecastTab?.errors?.replay || "", Boolean(window.priceForecastTab?.errors?.replay))] },
     };
 
     function renderMainTabProgress(container, config) {
@@ -11865,6 +11865,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (lighterCryptoTab) lighterCryptoTab.classList.toggle("terminal-read-only", locked);
         const lighterMicroTab = $("tabContentLighterMicro");
         if (lighterMicroTab) lighterMicroTab.classList.toggle("terminal-read-only", locked);
+        const priceForecastTab = $("tabContentPriceForecast");
+        if (priceForecastTab) priceForecastTab.classList.toggle("terminal-read-only", locked);
 
         const banner = $("terminalLockBanner");
         const bannerText = $("lblTerminalLockBannerText");
@@ -11935,6 +11937,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         window.cryptoEngine?.applyExecutionLock?.();
         window.lighterCryptoEngine?.applyExecutionLock?.();
         window.lighterMicroEngine?.syncLiveControlAccess?.();
+        window.priceForecastTab?.applyExecutionLock?.();
       }
     };
     window.terminalLockManager = terminalLockManager;

@@ -5,20 +5,29 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const STORAGE_KEY = "skhynix_price_forecast_settings_v2";
-  const INTERVAL_SECONDS = { "5m": 300, "15m": 900, "1h": 3600, "4h": 14400 };
+  const STORAGE_KEY = "skhynix_price_forecast_settings_v3";
+  const INTERVAL_SECONDS = { "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
   const FEATURE_GROUPS = ["momentum", "macd", "rsi", "ma", "volatility"];
 
   const DEFAULT_SETTINGS = Object.freeze({
-    symbol: "BTCUSDT",
-    interval: "5m",
+    venue: "binance_futures",
+    symbol: "ETHUSDT",
+    interval: "4h",
     horizon_bars: 1,
     neutral_bps: 8,
-    confidence_pct: 45,
+    confidence_pct: 49,
     ridge_lambda: 400,
     train_window: 1000,
     min_train_samples: 180,
     cost_bps: 10,
+    use_daily_trend_filter: true,
+    daily_ma_period: 20,
+    hold_same_direction: true,
+    entry_direction_mode: "two_way",
+    use_stop_loss: false,
+    stop_loss_pct: 3.0,
+    notional_usd: 200,
+    leverage: 1.0,
     momentum_lookback: 6,
     macd_fast: 12,
     macd_slow: 26,
@@ -52,6 +61,14 @@
 
   function formatNumber(value, digits = 2, fallback = "—") {
     return finite(value) ? Number(value).toFixed(digits) : fallback;
+  }
+
+  function formatPrice(value, symbol = "ETHUSDT") {
+    if (!finite(value)) return "—";
+    const num = Number(value);
+    const sym = String(symbol || "").toUpperCase();
+    const digits = sym.startsWith("DOGE") ? 5 : sym.startsWith("XRP") ? 4 : num >= 1000 ? 2 : 2;
+    return `$${num.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
   }
 
   const KST_TIME_ZONE = "Asia/Seoul";
@@ -336,7 +353,6 @@
     for (let column = 0; column < width; column += 1) {
       scales[column] = Math.max(1e-9, Math.sqrt(scales[column] / Math.max(1, n - 1)));
     }
-
     const lamInput = Math.max(0, Number(lambda));
     const volScaled = finite(samples[0]?.scale) && Number(samples[0].scale) > 0;
     if (volScaled) return fitRidgeVolScaled(samples, lamInput, means, scales, options);
@@ -436,17 +452,8 @@
       : Array.from(normResiduals, (value, i) => value * Number(samples[i].scale));
 
     return {
-      means,
-      scales,
-      yMean: 0,
-      weights,
-      amplitude,
-      tanhPredict: true,
-      residuals,
-      normResiduals,
-      normCenter,
-      normSigma,
-      sample_count: n,
+      means, scales, yMean: 0, weights, amplitude, tanhPredict: true,
+      residuals, normResiduals, normCenter, normSigma, sample_count: n,
     };
   }
 
@@ -482,23 +489,11 @@
       else counts.neutral += 0.5;
     }
     const total = counts.up + counts.neutral + counts.down;
-    return {
-      up: counts.up / total,
-      neutral: counts.neutral / total,
-      down: counts.down / total,
-    };
+    return { up: counts.up / total, neutral: counts.neutral / total, down: counts.down / total };
   }
 
   function classify(probabilities) {
-    return ["neutral", "up", "down"].reduce((best, key) => (
-      probabilities[key] > probabilities[best] ? key : best
-    ), "neutral");
-  }
-
-  function realizedClass(returnBps, neutralBps) {
-    if (returnBps > neutralBps) return "up";
-    if (returnBps < -neutralBps) return "down";
-    return "neutral";
+    return ["neutral", "up", "down"].reduce((best, key) => (probabilities[key] > probabilities[best] ? key : best), "neutral");
   }
 
   function makeSamples(bars, featureRows, settings, indicators = null) {
@@ -520,37 +515,6 @@
       });
     });
     return samples;
-  }
-
-  function ranks(values) {
-    const ordered = values.map((value, index) => ({ value: Number(value), index })).sort((a, b) => a.value - b.value);
-    const result = new Array(values.length);
-    let cursor = 0;
-    while (cursor < ordered.length) {
-      let end = cursor;
-      while (end + 1 < ordered.length && ordered[end + 1].value === ordered[cursor].value) end += 1;
-      const rank = (cursor + end + 2) / 2;
-      for (let offset = cursor; offset <= end; offset += 1) result[ordered[offset].index] = rank;
-      cursor = end + 1;
-    }
-    return result;
-  }
-
-  function correlation(left, right) {
-    if (left.length < 3 || left.length !== right.length) return null;
-    const leftMean = mean(left);
-    const rightMean = mean(right);
-    let numerator = 0;
-    let leftSq = 0;
-    let rightSq = 0;
-    for (let index = 0; index < left.length; index += 1) {
-      const x = Number(left[index]) - leftMean;
-      const y = Number(right[index]) - rightMean;
-      numerator += x * y;
-      leftSq += x * x;
-      rightSq += y * y;
-    }
-    return leftSq > 0 && rightSq > 0 ? numerator / Math.sqrt(leftSq * rightSq) : null;
   }
 
   function forecastStepFromEligible(bars, indicators, row, eligible, settings, sourceIndex) {
@@ -592,10 +556,14 @@
 
   function normalizeSettings(raw = {}) {
     const merged = { ...DEFAULT_SETTINGS, ...(raw || {}) };
+    const venue = String(merged.venue || DEFAULT_SETTINGS.venue).toLowerCase() === "lighter" ? "lighter" : "binance_futures";
+    const interval = ["5m", "15m", "1h", "4h"].includes(merged.interval) ? merged.interval : DEFAULT_SETTINGS.interval;
+    const cleanSym = String(merged.symbol || DEFAULT_SETTINGS.symbol).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20) || DEFAULT_SETTINGS.symbol;
     const settings = {
       ...merged,
-      symbol: String(merged.symbol || DEFAULT_SETTINGS.symbol).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20),
-      interval: INTERVAL_SECONDS[merged.interval] ? merged.interval : DEFAULT_SETTINGS.interval,
+      venue,
+      symbol: cleanSym,
+      interval,
       horizon_bars: Math.round(clamp(merged.horizon_bars, 1, 12)),
       neutral_bps: clamp(merged.neutral_bps, 0, 500),
       confidence_pct: clamp(merged.confidence_pct, 0, 100),
@@ -603,6 +571,14 @@
       train_window: Math.round(clamp(merged.train_window, 100, 1200)),
       min_train_samples: Math.round(clamp(merged.min_train_samples, 60, 1000)),
       cost_bps: clamp(merged.cost_bps, 0, 500),
+      use_daily_trend_filter: merged.use_daily_trend_filter !== false,
+      daily_ma_period: Math.round(clamp(merged.daily_ma_period ?? 20, 2, 200)),
+      hold_same_direction: merged.hold_same_direction !== false,
+      entry_direction_mode: ["two_way", "long_only", "short_only"].includes(merged.entry_direction_mode) ? merged.entry_direction_mode : "two_way",
+      use_stop_loss: Boolean(merged.use_stop_loss),
+      stop_loss_pct: clamp(merged.stop_loss_pct ?? 3.0, 0.1, 50),
+      notional_usd: clamp(merged.notional_usd ?? 200, 10, 5000),
+      leverage: clamp(merged.leverage ?? 1.0, 1, 10),
       momentum_lookback: Math.round(clamp(merged.momentum_lookback, 2, 50)),
       macd_fast: Math.round(clamp(merged.macd_fast, 2, 100)),
       macd_slow: Math.round(clamp(merged.macd_slow, 3, 200)),
@@ -623,12 +599,11 @@
   function buildCausalForecast(bars, rawSettings = {}) {
     const settings = normalizeSettings(rawSettings);
     const enabledGroups = FEATURE_GROUPS.filter((group) => settings[`use_${group}`]);
-    const empty = (error) => ({ settings, error, latest: null, forecast_signals: [], validation: null, indicators: null });
+    const empty = (error) => ({ settings, error, latest: null, forecast_signals: [], indicators: null });
     if (!enabledGroups.length) return empty("Enable at least one model input group.");
     if (!Array.isArray(bars) || bars.length < settings.min_train_samples + settings.horizon_bars + 60) {
       return empty(`Need at least ${settings.min_train_samples + settings.horizon_bars + 60} completed candles.`);
     }
-
     const { indicators, rows } = buildFeatureRows(bars, settings);
     const samples = makeSamples(bars, rows, settings, indicators);
     const validSourceIndices = rows.map((row, index) => row ? index : null).filter((index) => index !== null);
@@ -641,7 +616,31 @@
       : forecastStepFromEligible(bars, indicators, rows[latestIndex], latestEligible, settings, latestIndex);
     if (!latest) return empty("Not enough matured causal samples for the selected training window.");
 
-    const earliestValidationIndex = Math.max(
+    const realizedClass = (retBps, band) => (retBps > band ? "up" : retBps < -band ? "down" : "neutral");
+    const rankVals = (vals) => {
+      const ordered = vals.map((v, idx) => ({ v: Number(v), idx })).sort((a, b) => a.v - b.v);
+      const out = new Array(vals.length);
+      for (let i = 0; i < ordered.length;) {
+        let j = i;
+        while (j + 1 < ordered.length && ordered[j + 1].v === ordered[i].v) j += 1;
+        const r = (i + j + 2) / 2;
+        for (let k = i; k <= j; k += 1) out[ordered[k].idx] = r;
+        i = j + 1;
+      }
+      return out;
+    };
+    const corr = (xs, ys) => {
+      if (xs.length < 3) return null;
+      const mx = mean(xs), my = mean(ys);
+      let num = 0, dx2 = 0, dy2 = 0;
+      for (let i = 0; i < xs.length; i += 1) {
+        const dx = xs[i] - mx, dy = ys[i] - my;
+        num += dx * dy; dx2 += dx * dx; dy2 += dy * dy;
+      }
+      return dx2 > 0 && dy2 > 0 ? num / Math.sqrt(dx2 * dy2) : null;
+    };
+
+    const earliestIndex = Math.max(
       rows.findIndex(Boolean),
       Math.floor(bars.length * 0.75),
       settings.min_train_samples + settings.horizon_bars,
@@ -649,65 +648,52 @@
     const forecastSignals = [];
     const expectedValues = [];
     const realizedValues = [];
-    let correct = 0;
-    let qualified = 0;
-    let brierSum = 0;
-    let netBps = 0;
-    let directionalQualified = 0;
+    let correct = 0, qualified = 0, brierSum = 0;
     let sampleCursor = 0;
-
-    for (let sourceIndex = earliestValidationIndex; sourceIndex < bars.length - settings.horizon_bars; sourceIndex += 1) {
+    for (let sourceIndex = earliestIndex; sourceIndex < bars.length - settings.horizon_bars; sourceIndex += 1) {
       if (!rows[sourceIndex]) continue;
       while (sampleCursor < samples.length && samples[sampleCursor].targetIndex <= sourceIndex) sampleCursor += 1;
       const eligible = samples.slice(Math.max(0, sampleCursor - settings.train_window), sampleCursor);
       const step = forecastStepFromEligible(bars, indicators, rows[sourceIndex], eligible, settings, sourceIndex);
       if (!step) continue;
-      const { expected_bps: expectedBps, probabilities, direction, confidence, qualified: isQualified } = step;
       const targetIndex = sourceIndex + settings.horizon_bars;
       const actualBps = Math.log(Number(bars[targetIndex].close) / Number(bars[sourceIndex].close)) * 10000;
-      const actualDirection = realizedClass(actualBps, settings.neutral_bps);
-      const oneHot = { up: actualDirection === "up" ? 1 : 0, neutral: actualDirection === "neutral" ? 1 : 0, down: actualDirection === "down" ? 1 : 0 };
-      brierSum += ((probabilities.up - oneHot.up) ** 2 + (probabilities.neutral - oneHot.neutral) ** 2 + (probabilities.down - oneHot.down) ** 2) / 3;
-      expectedValues.push(expectedBps);
+      const actualDir = realizedClass(actualBps, settings.neutral_bps);
+      const p = step.probabilities;
+      brierSum += ((p.up - (actualDir === "up" ? 1 : 0)) ** 2 + (p.neutral - (actualDir === "neutral" ? 1 : 0)) ** 2 + (p.down - (actualDir === "down" ? 1 : 0)) ** 2) / 3;
+      expectedValues.push(step.expected_bps);
       realizedValues.push(actualBps);
-      if (isQualified) {
+      if (step.qualified) {
         qualified += 1;
-        if (direction === actualDirection) correct += 1;
-        if (direction === "up") { netBps += actualBps - settings.cost_bps; directionalQualified += 1; }
-        if (direction === "down") { netBps += -actualBps - settings.cost_bps; directionalQualified += 1; }
+        if (step.direction === actualDir) correct += 1;
       }
       forecastSignals.push({
         source_index: sourceIndex,
         source_time: Number(bars[sourceIndex].time),
         target_index: targetIndex,
         target_time: Number(bars[targetIndex].time),
-        expected_bps: expectedBps,
+        expected_bps: step.expected_bps,
         actual_bps: actualBps,
-        probabilities,
-        direction,
-        actual_direction: actualDirection,
-        confidence,
-        qualified: isQualified,
+        probabilities: step.probabilities,
+        direction: step.direction,
+        actual_direction: actualDir,
+        confidence: step.confidence,
+        qualified: step.qualified,
         train_samples: eligible.length,
       });
     }
-
-    const rankIc = correlation(ranks(expectedValues), ranks(realizedValues));
     const validation = {
       predictions: forecastSignals.length,
       qualified,
-      directional_qualified: directionalQualified,
       hit_rate_pct: qualified ? (correct / qualified) * 100 : null,
       brier: forecastSignals.length ? brierSum / forecastSignals.length : null,
-      rank_ic: rankIc,
-      average_net_bps: directionalQualified ? netBps / directionalQualified : null,
-      holdout_fraction: 0.25,
+      rank_ic: corr(rankVals(expectedValues), rankVals(realizedValues)),
     };
     return { settings, error: null, latest, forecast_signals: forecastSignals, validation, indicators };
   }
 
   function parseKlines(rows, interval, nowSeconds = Date.now() / 1000) {
-    const intervalSeconds = INTERVAL_SECONDS[interval] || 300;
+    const intervalSeconds = INTERVAL_SECONDS[interval] || 14400;
     if (!Array.isArray(rows)) return [];
     const deduped = new Map();
     for (let index = 0; index < rows.length; index += 1) {
@@ -721,14 +707,38 @@
         close: Number(row[4]),
         volume: Number(row[5] || 0),
       };
-      if (
-        finite(bar.time) && finite(bar.open) && finite(bar.high) && finite(bar.low) && finite(bar.close)
-        && bar.close_time <= nowSeconds
-      ) {
+      if (finite(bar.time) && finite(bar.open) && finite(bar.high) && finite(bar.low) && finite(bar.close) && bar.close_time <= nowSeconds) {
         deduped.set(bar.time, bar);
       }
     }
     return Array.from(deduped.values()).sort((left, right) => left.time - right.time);
+  }
+
+  function getApiPrefix() {
+    const p = typeof window !== "undefined" ? window.location.pathname : "";
+    return p.startsWith("/skhynix") ? "/skhynix" : "";
+  }
+
+  async function apiGet(path, options = {}) {
+    const resp = await fetch(`${getApiPrefix()}${path}`, { signal: options.signal });
+    const payload = await resp.json().catch(() => null);
+    if (!resp.ok) throw new Error((payload && (payload.error || payload.detail)) || `HTTP ${resp.status}`);
+    if (!payload) throw new Error("Invalid API response");
+    return payload;
+  }
+
+  async function apiPost(path, body) {
+    const token = window.terminalLockManager?.token;
+    if (!token) throw new Error("Unlock the terminal first");
+    const resp = await fetch(`${getApiPrefix()}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    const payload = await resp.json().catch(() => null);
+    if (!resp.ok) throw new Error((payload && (payload.error || payload.detail)) || `HTTP ${resp.status}`);
+    if (!payload) throw new Error("Invalid API response");
+    return payload;
   }
 
   class PriceForecastTab {
@@ -739,16 +749,36 @@
       this.settings = this.loadSettings();
       this.loadedMarket = null;
       this.bars = [];
-      this.result = null;
+      this.dailyMaSeries = [];
+      this.actualMarkers = [];
+      this.replayPayload = null;
+      this.statusPayload = null;
+      this.botState = null;
+      this.errors = { status: null, chart: null, replay: null };
       this.chart = null;
       this.candleSeries = null;
       this.maFastSeries = null;
       this.maSlowSeries = null;
+      this.dailyMaSeriesPlot = null;
+      this.executionChartFrame = null;
+      this.executionChartController = null;
+      this.rawExecutionMarkers = [];
+      this.showActualMarkers = true;
+      this.showVirtualMarkers = true;
+      this.showSignalArrows = true;
+      this.groupTradesAsRange = false;
+      this.historyFilter = "all";
+      this.activeHoveredExecutionMarkerKey = null;
+      this.activeHoveredPairKey = null;
+      this.selectedExecutionMarkerKey = null;
+      this.selectedPairKey = null;
+      this.stopPriceScaleWatch = null;
+      this._rangeChangeRaf = null;
       this.requestSequence = 0;
+      this.replaySequence = 0;
       this.loading = false;
-      this.lastLoadedAt = 0;
-      this.directFailUntil = 0;
       this.pendingFit = false;
+      this.lastLoadedAt = 0;
       this.pollTimer = null;
       this.resizeObserver = null;
     }
@@ -772,9 +802,10 @@
       globalThis.collapsibleSectionsManager?.ensureCollapseButtons?.(container);
       globalThis.collapsibleSectionsManager?.restoreStates?.();
       this.bindControls();
+      this.applyExecutionLock();
       this.initChart();
       this.mounted = true;
-      this.refresh({ fit: true });
+      this.refreshAll({ fit: true });
     }
 
     renderSkeleton(container) {
@@ -784,467 +815,1292 @@
           #tabContentPriceForecast { --pf-gap:var(--terminal-space-min, 6px); }
           #tabContentPriceForecast button { width:auto;height:auto;flex:0 0 auto; }
           #tabContentPriceForecast .pfPanel { background:#fff;border:1px solid #dbe2e7;border-radius:10px;padding:12px;box-shadow:0 1px 3px rgba(15,23,42,.05); }
-          #tabContentPriceForecast .pfControls { display:flex;align-items:end;gap:var(--pf-gap);flex-wrap:wrap; }
-          #tabContentPriceForecast .pfField { display:flex;flex-direction:column;gap:3px;min-width:76px; }
-          #tabContentPriceForecast .pfField label { color:#64748b;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em; }
-          #tabContentPriceForecast :is(select,input[type=number],input[type=text]) { height:30px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#0f172a;padding:0 7px;font-size:11px;font-weight:700; }
-          #tabContentPriceForecast .pfGrid { display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,.8fr);gap:var(--pf-gap);margin-top:var(--pf-gap); }
-          #tabContentPriceForecast .pfGrid > * { min-width:0;max-width:100%; }
-          #tabContentPriceForecast #pfChartPanel { min-width:0;overflow:hidden; }
-          #tabContentPriceForecast #pfChartHost { min-width:0;max-width:100%;overflow:hidden; }
-          #tabContentPriceForecast .pfProbGrid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--pf-gap); }
-          #tabContentPriceForecast .pfProb { border-radius:8px;padding:11px;border:1px solid #e2e8f0;background:#f8fafc; }
-          #tabContentPriceForecast .pfProb strong { display:block;font-size:24px;font-variant-numeric:tabular-nums;margin-top:3px; }
-          #tabContentPriceForecast .pfKpis { display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--pf-gap);margin-top:var(--pf-gap); }
+          #tabContentPriceForecast .pfHeaderRow { display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px; }
+          #tabContentPriceForecast .pfActions { display:flex;gap:6px;flex-wrap:wrap;align-items:center; }
+          #tabContentPriceForecast .pfBtn { border-radius:6px;padding:6px 11px;font-size:11px;font-weight:800;cursor:pointer;border:1px solid #cbd5e1;background:#fff;color:#0f172a; }
+          #tabContentPriceForecast .pfBtn.primary { background:#0284c7;border-color:#0284c7;color:#fff; }
+          #tabContentPriceForecast .pfBtn.arm { background:#059669;border-color:#059669;color:#fff; }
+          #tabContentPriceForecast .pfBtn.pause { background:#d97706;border-color:#d97706;color:#fff; }
+          #tabContentPriceForecast .pfBtn.danger { background:#dc2626;border-color:#dc2626;color:#fff; }
+          #tabContentPriceForecast .pfAcctGrid { display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--pf-gap);margin-bottom:8px; }
           #tabContentPriceForecast .pfKpi { padding:9px;border:1px solid #e2e8f0;border-radius:7px;background:#f8fafc;min-width:0; }
           #tabContentPriceForecast .pfKpi span { color:#64748b;font-size:9px;font-weight:800;text-transform:uppercase;display:block; }
-          #tabContentPriceForecast .pfKpi strong { color:#0f172a;font-size:16px;font-variant-numeric:tabular-nums;display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis; }
-          #tabContentPriceForecast .pfFeature { display:grid;grid-template-columns:auto minmax(90px,1fr) auto;align-items:center;gap:7px;padding:7px 0;border-bottom:1px solid #eef2f7;font-size:11px; }
-          #tabContentPriceForecast .pfFeature:last-child { border-bottom:0; }
-          #tabContentPriceForecast .pfFeatureValue { color:#475569;text-align:right;font-variant-numeric:tabular-nums; }
-          #tabContentPriceForecast .pfState { padding:2px 6px;border-radius:999px;font-size:9px;font-weight:900;background:#dcfce7;color:#047857; }
+          #tabContentPriceForecast .pfKpi strong { color:#0f172a;font-size:15px;font-variant-numeric:tabular-nums;display:block;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+          #tabContentPriceForecast .pfKpi small { display:block;color:#64748b;font-size:9.5px;margin-top:2px; }
+          #tabContentPriceForecast .pfControls { display:flex;align-items:end;gap:var(--pf-gap);flex-wrap:wrap; }
+          #tabContentPriceForecast .pfField { display:flex;flex-direction:column;gap:3px;min-width:72px; }
+          #tabContentPriceForecast .pfField label { color:#64748b;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;display:flex;align-items:center;gap:4px; }
+          #tabContentPriceForecast :is(select,input[type=number],input[type=text]) { height:30px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#0f172a;padding:0 7px;font-size:11px;font-weight:700; }
+          #tabContentPriceForecast .pfGrid { display:grid;grid-template-columns:minmax(0,1.72fr) minmax(290px,.82fr);gap:var(--pf-gap);margin-top:var(--pf-gap); }
+          #tabContentPriceForecast .pfGrid > * { min-width:0;max-width:100%; }
+          #tabContentPriceForecast .pfCondRow { display:grid;grid-template-columns:minmax(100px,1fr) auto;gap:6px;padding:7px 0;border-bottom:1px solid #eef2f7;font-size:11px;align-items:center; }
+          #tabContentPriceForecast .pfCondRow:last-child { border-bottom:0; }
+          #tabContentPriceForecast .pfState { padding:2px 7px;border-radius:999px;font-size:9px;font-weight:900;background:#dcfce7;color:#047857;display:inline-block;white-space:nowrap; }
+          #tabContentPriceForecast .pfState.wait { background:#fef3c7;color:#92400e; }
           #tabContentPriceForecast .pfState.off { background:#f1f5f9;color:#64748b; }
-          #tabContentPriceForecast .pfTable { width:100%;border-collapse:collapse;font-size:10.5px;font-variant-numeric:tabular-nums; }
-          #tabContentPriceForecast .pfTable :is(th,td) { padding:7px 8px;border-bottom:1px solid #e2e8f0;text-align:right;white-space:nowrap; }
-          #tabContentPriceForecast .pfTable :is(th,td):first-child { text-align:left; }
-          #tabContentPriceForecast .pfToggle { accent-color:#0284c7;width:15px;height:15px; }
-          #tabContentPriceForecast .pfStatus { min-height:20px;color:#475569;font-size:10.5px;margin-top:7px;line-height:1.45; }
-          #tabContentPriceForecast .pfError { color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;padding:7px;border-radius:6px; }
-          @media (max-width:900px) {
+          #tabContentPriceForecast .pfState.err { background:#fee2e2;color:#b91c1c; }
+          #tabContentPriceForecast .pfFeature { display:grid;grid-template-columns:auto minmax(80px,1fr) auto;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #eef2f7;font-size:10.5px; }
+          #tabContentPriceForecast .pfFeature:last-child { border-bottom:0; }
+          #tabContentPriceForecast .pfToggle { accent-color:#0284c7;width:14px;height:14px;cursor:pointer; }
+          #tabContentPriceForecast .pfStatusBar { font-size:10.5px;color:#475569;margin-top:6px;line-height:1.4; }
+          #tabContentPriceForecast .pfErrorBox { color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;padding:7px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-bottom:8px; }
+          #tabContentPriceForecast .pfWarnBox { color:#92400e;background:#fffbeb;border:1px solid #fde68a;padding:7px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-bottom:8px; }
+          #tabContentPriceForecast .pfTableWrap { overflow:auto;max-inline-size:100%;max-block-size:380px;container-type:inline-size;border:1px solid #e2e8f0;border-radius:8px;margin-top:8px; }
+          #tabContentPriceForecast .pfTable { width:100%;border-collapse:separate;border-spacing:0;font-size:11px;font-variant-numeric:tabular-nums; }
+          #tabContentPriceForecast .pfTable thead th { position:sticky;inset-block-start:0;z-index:2;background:#f8fafc;color:#475569;font-size:9.5px;font-weight:800;text-transform:uppercase;padding:8px 9px;border-bottom:1px solid #cbd5e1;text-align:left;white-space:nowrap; }
+          #tabContentPriceForecast .pfTable tbody td { padding:8px 9px;border-bottom:1px solid #eef2f7;vertical-align:middle;white-space:nowrap; }
+          #tabContentPriceForecast .pfTable tbody tr { cursor:pointer; }
+          #tabContentPriceForecast .pfTable tbody tr:hover { background:#f8fafc; }
+          #tabContentPriceForecast .pfHistTabs { display:flex;gap:4px;flex-wrap:wrap; }
+          #tabContentPriceForecast .pfHistTab { border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;padding:4px 9px;font-size:10.5px;font-weight:700;cursor:pointer; }
+          #tabContentPriceForecast .pfHistTab.active { background:#0f172a;color:#fff;border-color:#0f172a; }
+          @media (max-width:980px) {
             #tabContentPriceForecast .pfGrid { display:block; }
             #tabContentPriceForecast .pfGrid > * + * { margin-top:var(--pf-gap); }
-            #tabContentPriceForecast .pfKpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            #tabContentPriceForecast .pfAcctGrid { grid-template-columns:repeat(2,minmax(0,1fr)); }
           }
           @media (max-width:560px) {
-            #tabContentPriceForecast .pfProbGrid { grid-template-columns:1fr; }
-            #tabContentPriceForecast .pfKpis { grid-template-columns:1fr; }
+            #tabContentPriceForecast .pfAcctGrid { grid-template-columns:1fr; }
           }
         </style>
-        <section class="pfPanel" aria-label="Causal price forecast controls">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+
+        <section class="pfPanel" aria-label="4h Causal Ridge + 1d MA20 Trading Controls">
+          <div class="pfHeaderRow">
             <div>
-              <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;"><strong style="font-size:16px;color:#0f172a;">Causal Price Forecast</strong><span style="background:#e0f2fe;color:#0369a1;border-radius:999px;padding:3px 7px;font-size:9px;font-weight:900;">RESEARCH ONLY · NO ORDERS</span></div>
-              <small style="color:#64748b;">Ridge forecast trained only on matured outcomes · completed Binance futures candles · walk-forward validation</small>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <strong style="font-size:16px;color:#0f172a;">4h Quant Trader (Causal Ridge + 1d MA20)</strong>
+                <span id="pfLiveBadge" class="pfState off">SYNCING…</span>
+                <span id="pfVenuePill" style="background:#e0f2fe;color:#0369a1;border-radius:999px;padding:2px 8px;font-size:9.5px;font-weight:900;">BINANCE FUTURES</span>
+              </div>
+              <small id="pfHeaderSub" style="color:#64748b;display:block;margin-top:2px;">Evaluates newly completed 4h candles gated by completed 1d Close vs MA20 · Zero-drift Python live &amp; replay engine</small>
             </div>
-            <button id="pfRefresh" type="button" style="border:1px solid #0284c7;background:#0284c7;color:#fff;border-radius:5px;padding:7px 11px;font-size:11px;font-weight:800;">↻ Refresh</button>
+            <div class="pfActions">
+              <button id="pfBtnUnlock" class="pfBtn primary" type="button" style="display:none;">🔒 Unlock Live Controls</button>
+              <button id="pfBtnToggleLive" class="pfBtn arm terminal-action-control" type="button">▶ Start Live Bot</button>
+              <button id="pfBtnSaveConfig" class="pfBtn primary terminal-action-control" type="button">💾 Save Strategy &amp; Size</button>
+              <button id="pfBtnReconcile" class="pfBtn terminal-action-control" type="button">⚖ Reconcile</button>
+              <button id="pfBtnFlatten" class="pfBtn danger terminal-action-control" type="button">🛑 Flatten</button>
+              <button id="pfRefresh" class="pfBtn" type="button">↻ Refresh</button>
+            </div>
           </div>
+
+          <div id="pfAlertBanner" style="display:none;"></div>
+
+          <div class="pfAcctGrid">
+            <div class="pfKpi">
+              <span>Account Equity</span>
+              <strong id="pfAcctEquity">—</strong>
+              <small id="pfAcctSource">Awaiting venue telemetry</small>
+            </div>
+            <div class="pfKpi">
+              <span>Available Margin</span>
+              <strong id="pfAcctMargin">—</strong>
+              <small id="pfAcctExposure">Gross: —</small>
+            </div>
+            <div class="pfKpi">
+              <span>Selected Position</span>
+              <strong id="pfOpenPos">0 Open (Flat)</strong>
+              <small id="pfOpenPosSub">No bot-owned tranche</small>
+            </div>
+            <div class="pfKpi">
+              <span>Unrealized PnL</span>
+              <strong id="pfUnrealizedPnl">—</strong>
+              <small id="pfLastBotAction">Bot action: —</small>
+            </div>
+            <div class="pfKpi">
+              <span>Verified Bot Realized PnL</span>
+              <strong id="pfRealizedPnl">—</strong>
+              <small id="pfRealizedCount">0 verified exits</small>
+            </div>
+          </div>
+
           <div class="pfControls">
-            <div class="pfField"><label for="pfSymbol">Symbol</label><input id="pfSymbol" type="text" value="${s.symbol}" maxlength="20" style="width:100px;text-transform:uppercase;"></div>
-            <div class="pfField"><label for="pfInterval">Candle</label><select id="pfInterval">${Object.keys(INTERVAL_SECONDS).map((value) => `<option value="${value}"${s.interval === value ? " selected" : ""}>${value}</option>`).join("")}</select></div>
-            <div class="pfField"><label for="pfHorizon">Horizon bars</label><input id="pfHorizon" type="number" min="1" max="12" step="1" value="${s.horizon_bars}"></div>
-            <div class="pfField"><label for="pfNeutralBps">Neutral ±bp</label><input id="pfNeutralBps" type="number" min="0" max="500" step="1" value="${s.neutral_bps}"></div>
-            <div class="pfField"><label for="pfConfidence">Min confidence %</label><input id="pfConfidence" type="number" min="0" max="100" step="1" value="${s.confidence_pct}"></div>
-            <div class="pfField"><label for="pfCostBps">Round-trip cost bp</label><input id="pfCostBps" type="number" min="0" max="500" step="1" value="${s.cost_bps}"></div>
-            <div class="pfField"><label for="pfLambda">Ridge λ</label><input id="pfLambda" type="number" min="0.0001" max="10000" step="0.1" value="${s.ridge_lambda}"></div>
-            <div class="pfField"><label for="pfTrainWindow">Train window</label><input id="pfTrainWindow" type="number" min="100" max="1200" step="10" value="${s.train_window}"></div>
-            <div class="pfField"><label for="pfMinSamples">Min samples</label><input id="pfMinSamples" type="number" min="60" max="1000" step="10" value="${s.min_train_samples}"></div>
+            <div class="pfField">
+              <label for="pfVenue">Venue</label>
+              <select id="pfVenue">
+                <option value="binance_futures"${s.venue === "binance_futures" ? " selected" : ""}>Binance Futures</option>
+                <option value="lighter"${s.venue === "lighter" ? " selected" : ""}>Lighter DEX (0-Fee)</option>
+              </select>
+            </div>
+            <div class="pfField">
+              <label for="pfSymbol">Symbol</label>
+              <select id="pfSymbol">
+                <option value="ETHUSDT"${s.symbol === "ETHUSDT" ? " selected" : ""}>ETH (Perp)</option>
+                <option value="BTCUSDT"${s.symbol === "BTCUSDT" ? " selected" : ""}>BTC (Perp)</option>
+                <option value="SOLUSDT"${s.symbol === "SOLUSDT" ? " selected" : ""}>SOL (Perp)</option>
+                <option value="DOGEUSDT"${s.symbol === "DOGEUSDT" ? " selected" : ""}>DOGE (Perp)</option>
+                <option value="XRPUSDT"${s.symbol === "XRPUSDT" ? " selected" : ""}>XRP (Perp)</option>
+              </select>
+            </div>
+            <div class="pfField">
+              <label for="pfInterval">Candle</label>
+              <select id="pfInterval">
+                <option value="4h"${s.interval === "4h" ? " selected" : ""}>4h (Live Default)</option>
+                <option value="1h"${s.interval === "1h" ? " selected" : ""}>1h</option>
+                <option value="15m"${s.interval === "15m" ? " selected" : ""}>15m</option>
+                <option value="5m"${s.interval === "5m" ? " selected" : ""}>5m</option>
+              </select>
+            </div>
+            <div class="pfField"><label for="pfNotional">Notional ($)</label><input id="pfNotional" type="number" min="10" max="5000" step="10" value="${s.notional_usd}" style="width:76px;"></div>
+            <div class="pfField"><label for="pfLeverage">Lev (x)</label><input id="pfLeverage" type="number" min="1" max="10" step="0.5" value="${s.leverage}" style="width:58px;"></div>
+            <div class="pfField"><label for="pfConfidence">Min Conf %</label><input id="pfConfidence" type="number" min="0" max="100" step="1" value="${s.confidence_pct}" style="width:68px;"></div>
+            <div class="pfField">
+              <label for="pfUseDailyFilter"><input id="pfUseDailyFilter" class="pfToggle" type="checkbox"${s.use_daily_trend_filter ? " checked" : ""}> 1d MA</label>
+              <input id="pfDailyMaPeriod" type="number" min="2" max="200" step="1" value="${s.daily_ma_period}" style="width:64px;">
+            </div>
+            <div class="pfField">
+              <label for="pfHoldSameDirection"><input id="pfHoldSameDirection" class="pfToggle" type="checkbox"${s.hold_same_direction ? " checked" : ""}> Hold Streaks</label>
+              <select id="pfDirectionMode" style="width:108px;">
+                <option value="two_way"${s.entry_direction_mode === "two_way" ? " selected" : ""}>Two-Way (L+S)</option>
+                <option value="long_only"${s.entry_direction_mode === "long_only" ? " selected" : ""}>Long Only</option>
+                <option value="short_only"${s.entry_direction_mode === "short_only" ? " selected" : ""}>Short Only</option>
+              </select>
+            </div>
+            <div class="pfField"><label for="pfNeutralBps">Band ±bp</label><input id="pfNeutralBps" type="number" min="0" max="500" step="1" value="${s.neutral_bps}" style="width:64px;"></div>
+            <div class="pfField"><label for="pfLambda">Ridge λ</label><input id="pfLambda" type="number" min="0.0001" max="10000" step="10" value="${s.ridge_lambda}" style="width:68px;"></div>
+            <div class="pfField"><label for="pfCostBps">Fee bp</label><input id="pfCostBps" type="number" min="0" max="500" step="1" value="${s.cost_bps}" style="width:56px;"></div>
+            <div class="pfField">
+              <label for="pfUseStopLoss"><input id="pfUseStopLoss" class="pfToggle" type="checkbox"${s.use_stop_loss ? " checked" : ""}> Stop %</label>
+              <input id="pfStopLossPct" type="number" min="0.1" max="50" step="0.5" value="${s.stop_loss_pct}" style="width:58px;">
+            </div>
+            <div class="pfField"><label for="pfHorizon">Horizon</label><input id="pfHorizon" type="number" min="1" max="12" step="1" value="${s.horizon_bars}" style="width:56px;"></div>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:7px;font-size:10px;color:#475569;flex-wrap:wrap;align-items:center;">
+            <span><strong>Execution Safeguards (Always Active):</strong> Cross-bot collision lock · Account leverage cap ≤ 2.0x · Margin buffer ≥ 125% · Spread ≤ 15 bp · Completed candle freshness</span>
+            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;"><input id="pfShowSignalsToggle" class="pfToggle" type="checkbox" checked> Show independent entry signal arrows</label>
           </div>
         </section>
 
         <div class="pfGrid">
           <section class="pfPanel collapsible-section" id="pfChartPanel">
-            <div class="collapsible-header" style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px;">
-              <div><strong id="pfChartTitle">${s.symbol} · ${s.interval}</strong><small id="pfChartSubtitle" style="display:block;color:#64748b;margin-top:2px;">Loading completed candles…</small></div>
-              <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
-            </div>
-            <div id="pfChartHost" style="height:460px;width:100%;position:relative;border:1px solid #e2e8f0;border-radius:7px;background:#fff;"></div>
-            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:10px;font-weight:700;color:#64748b;"><span style="color:#0284c7;">— Fast MA</span><span style="color:#7c3aed;">— Slow MA</span><span style="color:#16a34a;">▲ Qualified Up forecast</span><span style="color:#dc2626;">▼ Qualified Down forecast</span><span style="color:#64748b;">● Qualified Neutral forecast</span></div>
-            <div id="pfChartStatus" class="pfStatus">Waiting for completed candles.</div>
+            <div id="pfExecutionChartFrame"></div>
+            <div id="pfChartStatus" class="pfStatusBar">Loading completed candles &amp; trades…</div>
           </section>
 
           <div style="display:flex;flex-direction:column;gap:var(--pf-gap);">
-            <section class="pfPanel" aria-label="Latest forecast">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:7px;margin-bottom:8px;"><strong>Next-horizon distribution</strong><span id="pfForecastBadge" class="pfState off">WAITING</span></div>
-              <div class="pfProbGrid">
-                <div class="pfProb" style="background:#f0fdf4;border-color:#bbf7d0;color:#047857;"><span>UP</span><strong id="pfProbUp">—</strong></div>
-                <div class="pfProb" style="color:#475569;"><span>NEUTRAL</span><strong id="pfProbNeutral">—</strong></div>
-                <div class="pfProb" style="background:#fef2f2;border-color:#fecaca;color:#b91c1c;"><span>DOWN</span><strong id="pfProbDown">—</strong></div>
+            <section class="pfPanel" aria-label="Live and Paper Strategy Conditions">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;">
+                <strong>Entry Conditions &amp; 1d Regime</strong>
+                <span id="pfEvalStatusBadge" class="pfState off">WAITING</span>
               </div>
-              <div class="pfKpis" style="grid-template-columns:repeat(2,minmax(0,1fr));">
-                <div class="pfKpi"><span>Expected move</span><strong id="pfExpected">—</strong></div>
-                <div class="pfKpi"><span>Residual <i style="font-style:normal;text-transform:none;">σ</i></span><strong id="pfSigma">—</strong></div>
+              <div class="pfCondRow">
+                <div><strong>1. 1d MA Trend Filter</strong><div id="pfCondDailyDetail" style="color:#64748b;font-size:10px;">Awaiting completed 1d bar</div></div>
+                <span id="pfCondDailyBadge" class="pfState off">WAITING</span>
               </div>
-              <div id="pfForecastSource" class="pfStatus">Source: awaiting a completed candle.</div>
+              <div class="pfCondRow">
+                <div><strong>2. Min Confidence Gate</strong><div id="pfCondConfDetail" style="color:#64748b;font-size:10px;">Awaiting completed 4h bar</div></div>
+                <span id="pfCondConfBadge" class="pfState off">WAITING</span>
+              </div>
+              <div class="pfCondRow">
+                <div><strong>3. Ridge Return Edge</strong><div id="pfCondEdgeDetail" style="color:#64748b;font-size:10px;">|Expected| vs Neutral ±bp</div></div>
+                <span id="pfCondEdgeBadge" class="pfState off">WAITING</span>
+              </div>
+              <div class="pfCondRow">
+                <div><strong>4. Execution Safeguards</strong><div id="pfCondGuardDetail" style="color:#64748b;font-size:10px;">Collision · Margin · Spread</div></div>
+                <span id="pfCondGuardBadge" class="pfState off">CHECKING</span>
+              </div>
+              <div id="pfEvalSource" class="pfStatusBar">Source: awaiting completed candle.</div>
             </section>
 
-            <section class="pfPanel" aria-label="Forecast inputs">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:7px;margin-bottom:2px;"><strong>Model inputs</strong><small style="color:#64748b;">Each switch refits the model</small></div>
+            <section class="pfPanel" aria-label="Causal Ridge Input Switches">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:2px;">
+                <strong>Ridge Model Inputs</strong>
+                <small style="color:#64748b;">Refits replay · Save updates bot</small>
+              </div>
               ${this.featureRowsMarkup(s)}
-              <div id="pfInputSource" class="pfStatus">Values unavailable until candles load.</div>
             </section>
           </div>
         </div>
 
-        <section class="pfPanel" style="margin-top:var(--pf-gap);" aria-label="Walk-forward validation">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;"><div><strong>Purged walk-forward validation</strong><small style="display:block;color:#64748b;margin-top:2px;">Final 25% holdout · each prediction trains only on outcomes known at its source candle · no shuffled split</small></div><span id="pfValidationStatus" class="pfState off">WAITING</span></div>
-          <div class="pfKpis">
-            <div class="pfKpi"><span>Qualified / total</span><strong id="pfPredictionCount">—</strong></div>
-            <div class="pfKpi"><span>Class hit rate</span><strong id="pfHitRate">—</strong></div>
-            <div class="pfKpi"><span>Rank IC</span><strong id="pfRankIc">—</strong></div>
-            <div class="pfKpi"><span>Multiclass Brier</span><strong id="pfBrier">—</strong></div>
-            <div class="pfKpi"><span>Avg directional net</span><strong id="pfNetBps">—</strong></div>
+        <section class="pfPanel" style="margin-top:var(--pf-gap);" aria-label="Historical Trades">
+          <div class="pfHeaderRow" style="margin-bottom:6px;">
+            <div>
+              <strong style="font-size:14px;color:#0f172a;">Historical Trades (Actual Fills &amp; Causal Replay)</strong>
+              <small id="pfHistSubtitle" style="display:block;color:#64748b;margin-top:2px;">Click any row to highlight its paired trade rectangle on the chart · Hover chart markers for P&amp;L</small>
+            </div>
+            <div class="pfHistTabs" role="tablist" aria-label="Trade source filter">
+              <button type="button" class="pfHistTab active" data-hist-filter="all">All Trades</button>
+              <button type="button" class="pfHistTab" data-hist-filter="actual">Actual Exchange Fills</button>
+              <button type="button" class="pfHistTab" data-hist-filter="virtual">Paper Replay</button>
+            </div>
           </div>
-          <div style="overflow:auto;max-height:280px;margin-top:var(--pf-gap);">
-            <table class="pfTable"><thead><tr><th>Source candle (KST)</th><th>Forecast</th><th>Confidence</th><th>Expected</th><th>Realized</th><th>Outcome</th></tr></thead><tbody id="pfForecastRows"><tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:18px;">No causal forecasts yet.</td></tr></tbody></table>
+
+          <div class="pfAcctGrid" style="margin-bottom:6px;">
+            <div class="pfKpi"><span>Replay Trades</span><strong id="pfSumTrades">—</strong></div>
+            <div class="pfKpi"><span>Win Rate</span><strong id="pfSumWin">—</strong></div>
+            <div class="pfKpi"><span>Paper Net Return</span><strong id="pfSumReturn">—</strong></div>
+            <div class="pfKpi"><span>Max Drawdown</span><strong id="pfSumMaxDD">—</strong></div>
+            <div class="pfKpi"><span>Worst Single Trade</span><strong id="pfSumWorst">—</strong></div>
           </div>
-          <p style="font-size:10px;color:#64748b;line-height:1.45;margin:8px 0 0;">Forecast markers are model outputs, not fills or trade recommendations. The displayed current forecast has no realized outcome yet. News, liquidation cascades, latency, and order-book impact are not modeled.</p>
+
+          <div tabindex="0" role="region" aria-label="Historical Trades Table" class="pfTableWrap">
+            <table class="pfTable">
+              <thead>
+                <tr>
+                  <th>Time (KST)</th>
+                  <th>Source / Event</th>
+                  <th>Direction</th>
+                  <th>Symbol / Size</th>
+                  <th>Entry → Exit</th>
+                  <th>Fee</th>
+                  <th>Realized PnL</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="pfHistoryBody">
+                <tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:24px;">Loading trade history…</td></tr>
+              </tbody>
+            </table>
+          </div>
         </section>
       `;
     }
 
     featureRowsMarkup(settings) {
       const rows = [
-        ["momentum", "Momentum", `lookback <input id="pfMomentumLookback" type="number" min="2" max="50" step="1" value="${settings.momentum_lookback}" style="width:56px;height:24px;">`],
-        ["macd", "MACD H", `<input id="pfMacdFast" type="number" min="2" max="100" value="${settings.macd_fast}" style="width:45px;height:24px;"> / <input id="pfMacdSlow" type="number" min="3" max="200" value="${settings.macd_slow}" style="width:45px;height:24px;"> / <input id="pfMacdSignal" type="number" min="2" max="100" value="${settings.macd_signal}" style="width:45px;height:24px;">`],
-        ["rsi", "Wilder RSI", `period <input id="pfRsiPeriod" type="number" min="2" max="100" value="${settings.rsi_period}" style="width:56px;height:24px;">`],
-        ["ma", "MA trend + Ride/Hang", `<input id="pfMaFast" type="number" min="2" max="200" value="${settings.ma_fast}" style="width:48px;height:24px;"> / <input id="pfMaSlow" type="number" min="3" max="400" value="${settings.ma_slow}" style="width:48px;height:24px;"> · slope <input id="pfMaSlope" type="number" min="1" max="50" value="${settings.ma_slope_lookback}" style="width:48px;height:24px;">`],
-        ["volatility", "ATR + volatility", `ATR <input id="pfAtrPeriod" type="number" min="2" max="100" value="${settings.atr_period}" style="width:56px;height:24px;">`],
+        ["momentum", "Momentum", `lb <input id="pfMomentumLookback" type="number" min="2" max="50" step="1" value="${settings.momentum_lookback}" style="width:48px;height:22px;">`],
+        ["macd", "MACD H", `<input id="pfMacdFast" type="number" min="2" max="100" value="${settings.macd_fast}" style="width:40px;height:22px;">/<input id="pfMacdSlow" type="number" min="3" max="200" value="${settings.macd_slow}" style="width:40px;height:22px;">/<input id="pfMacdSignal" type="number" min="2" max="100" value="${settings.macd_signal}" style="width:38px;height:22px;">`],
+        ["rsi", "RSI", `p <input id="pfRsiPeriod" type="number" min="2" max="100" value="${settings.rsi_period}" style="width:48px;height:22px;">`],
+        ["ma", "MA + Slope", `<input id="pfMaFast" type="number" min="2" max="200" value="${settings.ma_fast}" style="width:42px;height:22px;">/<input id="pfMaSlow" type="number" min="3" max="400" value="${settings.ma_slow}" style="width:42px;height:22px;">·<input id="pfMaSlope" type="number" min="1" max="50" value="${settings.ma_slope_lookback}" style="width:36px;height:22px;">`],
+        ["volatility", "ATR + Vol", `p <input id="pfAtrPeriod" type="number" min="2" max="100" value="${settings.atr_period}" style="width:48px;height:22px;">`],
       ];
       return rows.map(([key, label, controls]) => `
         <div class="pfFeature" data-feature="${key}">
           <input class="pfToggle" id="pfUse_${key}" type="checkbox"${settings[`use_${key}`] ? " checked" : ""} aria-label="Use ${label}">
-          <div><strong>${label}</strong><div style="color:#64748b;margin-top:3px;">${controls}</div></div>
-          <div><span id="pfState_${key}" class="pfState${settings[`use_${key}`] ? "" : " off"}">${settings[`use_${key}`] ? "ACTIVE" : "OFF"}</span><div id="pfValue_${key}" class="pfFeatureValue" style="margin-top:4px;">—</div></div>
+          <div><strong>${label}</strong><div style="color:#64748b;margin-top:2px;">${controls}</div></div>
+          <div><span id="pfState_${key}" class="pfState${settings[`use_${key}`] ? "" : " off"}">${settings[`use_${key}`] ? "ACTIVE" : "OFF"}</span></div>
         </div>
       `).join("");
     }
 
     initChart() {
+      const frameHost = document.getElementById("pfExecutionChartFrame");
+      if (!frameHost || !globalThis.LightweightCharts) return;
+      const FrameClass = globalThis.StrategyExecutionChartFrame;
+      if (FrameClass) {
+        this.executionChartFrame = FrameClass.mount({
+          container: frameHost,
+          id: "pfChartCard",
+          title: "4H CANDLES + 1D MA20 + PAIRED ACTUAL & PAPER TRADES",
+          showAssetPane: false,
+          height: 450,
+          ids: {
+            action: "pfBtnRerunPaper",
+            actual: "pfShowActual",
+            virtual: "pfShowPaper",
+            status: "pfFrameStatus",
+            secondaryStatus: "pfDailyFilterOverlayBadge",
+            host: "pfChartHost",
+            legend: "pfChartLegend",
+            sync: "pfChartSync",
+          },
+          action: { label: "↻ Rerun Paper", onClick: () => this.refreshReplay({ force: true }) },
+          actual: { visible: true, label: "Actual (net)", onToggle: () => { this.showActualMarkers = !this.showActualMarkers; this.syncChartMarkerVisibility(); } },
+          virtual: { visible: true, label: "Paper", onToggle: () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.syncChartMarkerVisibility(); } },
+          grouping: { asRange: this.groupTradesAsRange, onChange: (asRange) => { this.groupTradesAsRange = asRange; this.renderOverlayMarkers(); } },
+          status: "Loading completed candles & paired trades…",
+          legendPosition: "top",
+          legend: '<span style="color:#0284c7">— MA20</span><span style="color:#7c3aed">— MA50</span><span style="color:#d97706">┈ 1d MA20 Trend</span><span><strong style="color:#16a34a">▶</strong> Long / Cover</span><span><strong style="color:#dc2626">▶</strong> Short / Sell</span><span style="background:linear-gradient(90deg,rgba(220,38,38,.18),rgba(22,163,74,.18));padding:1px 6px;border-radius:4px;">Shading: 1d MA20 Regime</span>',
+        });
+      } else {
+        frameHost.innerHTML = `<div id="pfChartHost" style="height:450px;width:100%;position:relative;"></div>`;
+      }
+
       const host = document.getElementById("pfChartHost");
-      if (!host || !globalThis.LightweightCharts) return;
+      if (!host) return;
       this.chart = globalThis.LightweightCharts.createChart(host, {
-        width: Math.max(320, host.clientWidth), height: Math.max(320, host.clientHeight),
+        width: Math.max(320, host.clientWidth),
+        height: 450,
         layout: { background: { color: "#ffffff" }, textColor: "#475569", fontSize: 11 },
         localization: { locale: "ko-KR", timeFormatter: (time) => formatKst(time) },
         grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
         rightPriceScale: { borderColor: "#e2e8f0", scaleMargins: { top: 0.08, bottom: 0.12 } },
-        timeScale: {
-          borderColor: "#e2e8f0",
-          timeVisible: true,
-          secondsVisible: false,
-          rightOffset: 5,
-          barSpacing: 7,
-          lockVisibleTimeRangeOnResize: true,
-          tickMarkFormatter: (time, tickMarkType) => formatKstTick(time, tickMarkType),
-        },
+        timeScale: { borderColor: "#e2e8f0", timeVisible: true, secondsVisible: false, tickMarkFormatter: (t, type) => formatKstTick(t, type) },
         crosshair: { mode: globalThis.LightweightCharts.CrosshairMode?.Normal ?? 0 },
       });
+
+      const ControllerClass = globalThis.StrategyExecutionChartController;
+      if (ControllerClass) {
+        ControllerClass.compactCrosshairMarkers(this.chart);
+        ControllerClass.configureStandardTimeScale(this.chart, { rightOffset: 5 });
+      }
+
       this.candleSeries = this.chart.addCandlestickSeries({
         upColor: "#16a34a", downColor: "#dc2626", borderVisible: false,
         wickUpColor: "#16a34a", wickDownColor: "#dc2626", priceLineVisible: true,
       });
-      this.maFastSeries = this.chart.addLineSeries({ color: "#0284c7", lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
-      this.maSlowSeries = this.chart.addLineSeries({ color: "#7c3aed", lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
+      this.maFastSeries = this.chart.addLineSeries({ color: "#0284c7", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+      this.maSlowSeries = this.chart.addLineSeries({ color: "#7c3aed", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+      this.dailyMaSeriesPlot = this.chart.addLineSeries({ color: "#d97706", lineWidth: 2, lineStyle: globalThis.LightweightCharts.LineStyle?.Dashed ?? 2, priceLineVisible: false, lastValueVisible: true });
+
+      if (ControllerClass) {
+        this.executionChartController = new ControllerClass({ series: this.candleSeries, lineStyle: globalThis.LightweightCharts.LineStyle });
+      }
+
+      host.style.position = "relative";
+      this.ensureOverlayLayers(host);
+
+      this.chart.subscribeClick(() => {
+        this.selectedExecutionMarkerKey = null;
+        this.selectedPairKey = null;
+        this.updateHoverPopup(null);
+        this.renderTradeTriangles();
+      });
+      this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+        if (this._rangeChangeRaf) return;
+        this._rangeChangeRaf = requestAnimationFrame(() => {
+          this._rangeChangeRaf = null;
+          this.renderTrendBands();
+          this.renderOverlayMarkers();
+        });
+      });
+      if (ControllerClass?.watchPriceScale) {
+        this.stopPriceScaleWatch = ControllerClass.watchPriceScale({
+          series: this.candleSeries,
+          host,
+          samplePrice: () => this.bars?.at(-1)?.close,
+          onChange: () => {
+            this.renderTrendBands();
+            this.renderOverlayMarkers();
+          },
+        });
+      }
       if (typeof ResizeObserver !== "undefined") {
         this.resizeObserver = new ResizeObserver(() => this.resize());
         this.resizeObserver.observe(host);
       }
     }
 
+    ensureOverlayLayers(host) {
+      if (!document.getElementById("pfTrendBandLayer")) {
+        const bands = document.createElement("div");
+        bands.id = "pfTrendBandLayer";
+        bands.style.cssText = "position:absolute;z-index:2;inset:0 0 26px 0;overflow:hidden;pointer-events:none;";
+        host.appendChild(bands);
+      }
+      if (!document.getElementById("pfTradeTrianglesLayer")) {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.id = "pfTradeTrianglesLayer";
+        svg.setAttribute("aria-label", "Paired entry and exit profit triangles");
+        svg.style.cssText = "position:absolute;inset:0 0 26px 0;width:100%;height:calc(100% - 26px);z-index:6;pointer-events:none;overflow:hidden;";
+        host.appendChild(svg);
+      }
+      if (!document.getElementById("pfTradeMarkerTargets")) {
+        const layer = document.createElement("div");
+        layer.id = "pfTradeMarkerTargets";
+        layer.setAttribute("aria-label", "Interactive paired trade markers");
+        layer.style.cssText = "position:absolute;inset:0 0 26px 0;z-index:7;pointer-events:none;overflow:hidden;";
+        host.appendChild(layer);
+      }
+      if (!document.getElementById("pfTradeMarkerHover")) {
+        const hover = document.createElement("div");
+        hover.id = "pfTradeMarkerHover";
+        hover.setAttribute("role", "status");
+        hover.style.cssText = "display:none;position:absolute;z-index:9;top:8px;left:12px;max-width:min(440px,calc(100% - 24px));padding:6px 10px;border-radius:6px;border:1px solid #cbd5e1;background:rgba(255,255,255,0.97);box-shadow:0 2px 8px rgba(15,23,42,.12);font-size:11px;font-weight:800;color:#0f172a;pointer-events:none;";
+        host.appendChild(hover);
+      }
+    }
+
+    syncChartMarkerVisibility() {
+      this.executionChartFrame?.setVisibility("actual", this.showActualMarkers);
+      this.executionChartFrame?.setVisibility("virtual", this.showVirtualMarkers);
+      this.renderOverlayMarkers();
+    }
+
     bindControls() {
-      const rerunIds = [
-        "pfHorizon", "pfNeutralBps", "pfConfidence", "pfCostBps", "pfLambda", "pfTrainWindow", "pfMinSamples",
+      const replayIds = [
+        "pfConfidence", "pfUseDailyFilter", "pfDailyMaPeriod", "pfHoldSameDirection",
+        "pfDirectionMode", "pfNeutralBps", "pfLambda", "pfCostBps", "pfUseStopLoss",
+        "pfStopLossPct", "pfHorizon", "pfNotional", "pfLeverage",
         "pfMomentumLookback", "pfMacdFast", "pfMacdSlow", "pfMacdSignal", "pfRsiPeriod", "pfMaFast", "pfMaSlow", "pfMaSlope", "pfAtrPeriod",
       ];
-      rerunIds.forEach((id) => document.getElementById(id)?.addEventListener("change", () => this.rerunFromControls()));
-      FEATURE_GROUPS.forEach((group) => document.getElementById(`pfUse_${group}`)?.addEventListener("change", () => this.rerunFromControls()));
-      document.getElementById("pfRefresh")?.addEventListener("click", () => this.refresh({ fit: false, force: true }));
-      document.getElementById("pfSymbol")?.addEventListener("change", () => this.refreshFromMarketControls());
-      document.getElementById("pfInterval")?.addEventListener("change", () => this.refreshFromMarketControls());
+      replayIds.forEach((id) => document.getElementById(id)?.addEventListener("change", () => this.onSettingsEdited()));
+      FEATURE_GROUPS.forEach((group) => document.getElementById(`pfUse_${group}`)?.addEventListener("change", () => this.onSettingsEdited()));
+      document.getElementById("pfVenue")?.addEventListener("change", () => this.onVenueOrSymbolChanged());
+      document.getElementById("pfSymbol")?.addEventListener("change", () => this.onVenueOrSymbolChanged());
+      document.getElementById("pfInterval")?.addEventListener("change", () => this.onVenueOrSymbolChanged());
+      document.getElementById("pfShowSignalsToggle")?.addEventListener("change", (e) => {
+        this.showSignalArrows = Boolean(e.target.checked);
+        this.renderNativeSignalArrows();
+      });
+      document.getElementById("pfRefresh")?.addEventListener("click", () => this.refreshAll({ fit: false, force: true }));
+      document.getElementById("pfBtnUnlock")?.addEventListener("click", () => window.terminalLockManager?.openPasswordModal?.());
+      document.getElementById("pfBtnSaveConfig")?.addEventListener("click", () => this.saveConfigToBot());
+      document.getElementById("pfBtnToggleLive")?.addEventListener("click", () => this.toggleLiveBot());
+      document.getElementById("pfBtnReconcile")?.addEventListener("click", () => this.reconcileBot());
+      document.getElementById("pfBtnFlatten")?.addEventListener("click", () => this.flattenBot());
+      document.querySelectorAll("#tabContentPriceForecast .pfHistTab").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          this.historyFilter = btn.getAttribute("data-hist-filter") || "all";
+          document.querySelectorAll("#tabContentPriceForecast .pfHistTab").forEach((b) => b.classList.toggle("active", b === btn));
+          this.renderHistoryTable();
+        });
+      });
     }
 
     readControls() {
-      const value = (id, fallback) => document.getElementById(id)?.value ?? fallback;
-      const checked = (id, fallback) => document.getElementById(id)?.checked ?? fallback;
+      const val = (id, fb) => document.getElementById(id)?.value ?? fb;
+      const chk = (id, fb) => document.getElementById(id)?.checked ?? fb;
       return normalizeSettings({
         ...this.settings,
-        symbol: value("pfSymbol", this.settings.symbol), interval: value("pfInterval", this.settings.interval),
-        horizon_bars: value("pfHorizon", this.settings.horizon_bars), neutral_bps: value("pfNeutralBps", this.settings.neutral_bps),
-        confidence_pct: value("pfConfidence", this.settings.confidence_pct), cost_bps: value("pfCostBps", this.settings.cost_bps),
-        ridge_lambda: value("pfLambda", this.settings.ridge_lambda), train_window: value("pfTrainWindow", this.settings.train_window),
-        min_train_samples: value("pfMinSamples", this.settings.min_train_samples), momentum_lookback: value("pfMomentumLookback", this.settings.momentum_lookback),
-        macd_fast: value("pfMacdFast", this.settings.macd_fast), macd_slow: value("pfMacdSlow", this.settings.macd_slow),
-        macd_signal: value("pfMacdSignal", this.settings.macd_signal), rsi_period: value("pfRsiPeriod", this.settings.rsi_period),
-        ma_fast: value("pfMaFast", this.settings.ma_fast), ma_slow: value("pfMaSlow", this.settings.ma_slow),
-        ma_slope_lookback: value("pfMaSlope", this.settings.ma_slope_lookback), atr_period: value("pfAtrPeriod", this.settings.atr_period),
-        ...Object.fromEntries(FEATURE_GROUPS.map((group) => [`use_${group}`, checked(`pfUse_${group}`, this.settings[`use_${group}`])])),
+        venue: val("pfVenue", this.settings.venue),
+        symbol: val("pfSymbol", this.settings.symbol),
+        interval: val("pfInterval", this.settings.interval),
+        notional_usd: val("pfNotional", this.settings.notional_usd),
+        leverage: val("pfLeverage", this.settings.leverage),
+        confidence_pct: val("pfConfidence", this.settings.confidence_pct),
+        use_daily_trend_filter: chk("pfUseDailyFilter", this.settings.use_daily_trend_filter),
+        daily_ma_period: val("pfDailyMaPeriod", this.settings.daily_ma_period),
+        hold_same_direction: chk("pfHoldSameDirection", this.settings.hold_same_direction),
+        entry_direction_mode: val("pfDirectionMode", this.settings.entry_direction_mode),
+        neutral_bps: val("pfNeutralBps", this.settings.neutral_bps),
+        ridge_lambda: val("pfLambda", this.settings.ridge_lambda),
+        cost_bps: val("pfCostBps", this.settings.cost_bps),
+        use_stop_loss: chk("pfUseStopLoss", this.settings.use_stop_loss),
+        stop_loss_pct: val("pfStopLossPct", this.settings.stop_loss_pct),
+        horizon_bars: val("pfHorizon", this.settings.horizon_bars),
+        momentum_lookback: val("pfMomentumLookback", this.settings.momentum_lookback),
+        macd_fast: val("pfMacdFast", this.settings.macd_fast),
+        macd_slow: val("pfMacdSlow", this.settings.macd_slow),
+        macd_signal: val("pfMacdSignal", this.settings.macd_signal),
+        rsi_period: val("pfRsiPeriod", this.settings.rsi_period),
+        ma_fast: val("pfMaFast", this.settings.ma_fast),
+        ma_slow: val("pfMaSlow", this.settings.ma_slow),
+        ma_slope_lookback: val("pfMaSlope", this.settings.ma_slope_lookback),
+        atr_period: val("pfAtrPeriod", this.settings.atr_period),
+        ...Object.fromEntries(FEATURE_GROUPS.map((g) => [`use_${g}`, chk(`pfUse_${g}`, this.settings[`use_${g}`])])),
       });
     }
 
-    rerunFromControls() {
-      const next = this.readControls();
-      if (!this.bars.length) {
-        this.settings = next;
-        this.saveSettings();
-        this.syncFeatureStates();
-        return;
-      }
-      if (this.loadedMarket && (next.symbol !== this.loadedMarket.symbol || next.interval !== this.loadedMarket.interval)) {
-        this.refreshFromMarketControls();
-        return;
-      }
-      this.settings = next;
-      this.saveSettings();
-      this.syncFeatureStates();
-      this.setStatus("Refitting causal ridge model…");
-      setTimeout(() => {
-        this.result = buildCausalForecast(this.bars, this.settings);
-        this.renderResult({ fit: false });
-        if (!this.result.error) {
-          this.setStatus(`${this.bars.length.toLocaleString()} completed candles · model refitted · latest source ${formatKst(this.bars[this.bars.length - 1].close_time)}`);
-        }
-      }, 0);
-    }
-
-    refreshFromMarketControls() {
-      this.refresh({ fit: true, force: true });
-    }
-
-    syncFeatureStates() {
+    syncFeatureBadges() {
       FEATURE_GROUPS.forEach((group) => {
         const badge = document.getElementById(`pfState_${group}`);
         if (!badge) return;
-        const enabled = this.settings[`use_${group}`];
-        badge.textContent = enabled ? "ACTIVE" : "OFF";
-        badge.classList.toggle("off", !enabled);
+        const on = Boolean(this.settings[`use_${group}`]);
+        badge.textContent = on ? "ACTIVE" : "OFF";
+        badge.className = `pfState${on ? "" : " off"}`;
       });
     }
 
-    setStatus(message, error = false) {
-      const status = document.getElementById("pfChartStatus");
-      if (!status) return;
-      status.textContent = message;
-      status.classList.toggle("pfError", error);
-    }
-
-    async fetchRows(symbol, interval) {
-      const location = typeof window !== "undefined" ? window.location : null;
-      const path = location?.pathname?.startsWith("/skhynix") ? "/skhynix/api/klines" : "/api/klines";
-      const origin = location?.origin && location.origin !== "null" ? location.origin : "";
-      const proxyUrl = origin ? `${origin}${path}?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=1500` : "";
-      const directUrl = `https://fapi.binance.com/fapi/v1/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=1500`;
-      const directFirst = Date.now() >= (this.directFailUntil || 0);
-      const candidates = (directFirst ? [directUrl, proxyUrl] : [proxyUrl, directUrl]).filter(Boolean);
-      let lastError = null;
-      for (const url of candidates) {
-        const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-        const timeout = setTimeout(() => controller?.abort(), url === proxyUrl ? 15000 : 3500);
-        try {
-          const response = await fetch(url, controller ? { signal: controller.signal } : undefined);
-          if (!response.ok) {
-            const httpErr = new Error(`HTTP ${response.status}`);
-            if (response.status >= 400 && response.status < 500 && url === proxyUrl && !directFirst) throw httpErr;
-            throw httpErr;
-          }
-          const rows = await response.json();
-          if (!Array.isArray(rows) || !rows.length) throw new Error("No candles returned");
-          return rows;
-        } catch (error) {
-          lastError = error;
-          if (url === directUrl) this.directFailUntil = Date.now() + 60000;
-          if (url === proxyUrl && !directFirst && /HTTP 4\d\d/.test(error?.message || "")) throw error;
-        } finally {
-          clearTimeout(timeout);
-        }
+    onVenueOrSymbolChanged() {
+      const prevVenue = this.settings.venue;
+      const next = this.readControls();
+      if (next.venue !== prevVenue) {
+        next.cost_bps = next.venue === "lighter" ? 0 : 10;
+        const costInput = document.getElementById("pfCostBps");
+        if (costInput) costInput.value = String(next.cost_bps);
       }
-      throw lastError || new Error("Unable to fetch Binance candles");
+      this.settings = next;
+      this.saveSettings();
+      this.refreshAll({ fit: true, force: true });
     }
 
-    async refresh(options = {}) {
+    onSettingsEdited() {
+      this.settings = this.readControls();
+      this.saveSettings();
+      this.syncFeatureBadges();
+      this.refreshReplay({ force: true });
+    }
+
+    async refreshAll(options = {}) {
       if (!this.mounted) return;
-      const requested = this.readControls();
-      const sameMarket = Boolean(
-        this.loadedMarket
-        && this.loadedMarket.symbol === requested.symbol
-        && this.loadedMarket.interval === requested.interval
-      );
-      const sequence = ++this.requestSequence;
+      this.settings = this.readControls();
+      this.saveSettings();
+      this.syncFeatureBadges();
+      const seq = ++this.requestSequence;
       this.loading = true;
-      const startedAt = performance.now ? performance.now() : Date.now();
-      this.setStatus(`Loading completed ${requested.interval} ${requested.symbol} candles…`);
-      document.getElementById("pfRefresh")?.setAttribute("disabled", "disabled");
+      this.setStatus("Refreshing account telemetry, completed candles & replay…");
       try {
-        const rows = await this.fetchRows(requested.symbol, requested.interval);
-        if (sequence !== this.requestSequence) return;
-        const bars = parseKlines(rows, requested.interval);
-        if (!bars.length) throw new Error("No completed candles are available.");
-        const previousLatestClose = this.bars.length ? Number(this.bars[this.bars.length - 1].close_time) : null;
-        const nextLatestClose = Number(bars[bars.length - 1].close_time);
-        if (sameMarket && !options.force && this.result && !this.result.error && previousLatestClose === nextLatestClose) {
-          this.settings = requested;
-          this.saveSettings();
-          this.lastLoadedAt = Date.now();
-          const elapsed = ((performance.now ? performance.now() : Date.now()) - startedAt) / 1000;
-          this.setStatus(`${this.bars.length.toLocaleString()} completed candles · checked in ${elapsed.toFixed(2)}s · no newer completed candle · source ${formatKst(previousLatestClose)}`);
-          return;
-        }
-        const result = buildCausalForecast(bars, requested);
-        this.settings = requested;
-        this.loadedMarket = { symbol: requested.symbol, interval: requested.interval };
-        this.saveSettings();
-        this.bars = bars;
-        this.result = result;
+        await Promise.all([
+          this.refreshStatus(),
+          this.refreshChart({ fit: options.fit !== false }),
+          this.refreshReplay({ force: options.force }),
+        ]);
+        if (seq !== this.requestSequence) return;
         this.lastLoadedAt = Date.now();
-        this.loaded = !result.error;
-        this.renderResult({ fit: options.fit !== false || !sameMarket });
+        this.loaded = Boolean(this.bars.length);
         window.updateMainTabLoading?.("priceforecast");
-        const elapsed = ((performance.now ? performance.now() : Date.now()) - startedAt) / 1000;
-        if (!result.error) this.setStatus(`${bars.length.toLocaleString()} completed candles · chart + forecast usable in ${elapsed.toFixed(2)}s · latest source ${formatKst(bars[bars.length - 1].close_time)}`);
-      } catch (error) {
-        if (sequence !== this.requestSequence) return;
-        this.loaded = Boolean(this.result && !this.result.error);
-        const priorLabel = this.loadedMarket ? `prior ${this.loadedMarket.symbol} · ${this.loadedMarket.interval}` : "prior";
-        this.setStatus(`Forecast unavailable for ${requested.symbol} · ${requested.interval}: ${error.message}. Use Refresh to retry; ${priorLabel} output remains unchanged.`, true);
       } finally {
-        if (sequence === this.requestSequence) {
-          this.loading = false;
-          document.getElementById("pfRefresh")?.removeAttribute("disabled");
+        if (seq === this.requestSequence) this.loading = false;
+      }
+    }
+
+    async refreshStatus() {
+      try {
+        const data = await apiGet("/api/forecast-trader/status");
+        this.statusPayload = data;
+        this.botState = data.bot || null;
+        this.errors.status = data.success ? null : (data.error || "Status unavailable");
+        this.renderStatusAndAccount();
+        window.updateMainTabLoading?.("priceforecast");
+      } catch (err) {
+        this.errors.status = err.message;
+        this.renderStatusError(err.message);
+        window.updateMainTabLoading?.("priceforecast");
+      }
+    }
+
+    async refreshChart(options = {}) {
+      const s = this.settings;
+      try {
+        const q = new URLSearchParams({
+          venue: s.venue,
+          symbol: s.symbol,
+          interval: s.interval,
+          limit: "500",
+          daily_ma_period: String(s.daily_ma_period),
+        });
+        const data = await apiGet(`/api/forecast-trader/candles?${q.toString()}`);
+        if (!data.success || !Array.isArray(data.bars) || !data.bars.length) {
+          throw new Error(data.error || "No candles returned");
+        }
+        this.errors.chart = null;
+        this.bars = data.bars;
+        this.dailyMaSeries = data.daily_ma_series || [];
+        this.actualMarkers = (data.markers || []).map((m, i) => ({
+          ...m,
+          markerKey: `actual:${m.pairKey}:${m.is_entry ? "E" : "X"}:${m.time}:${i}`,
+        }));
+        this.loadedMarket = { venue: s.venue, symbol: s.symbol, interval: s.interval };
+        this.renderCandlesAndMAs(options.fit !== false);
+        this.rebuildCombinedMarkers();
+        const completedCount = this.bars.filter((b) => b.completed !== false).length;
+        const latestCompleted = [...this.bars].reverse().find((b) => b.completed !== false) || this.bars.at(-1);
+        const lastBar = this.bars.at(-1);
+        const formingNote = lastBar && lastBar.completed === false ? ` · forming bar closes ${formatKst(lastBar.close_time)}` : "";
+        this.setStatus(`${s.symbol} · ${s.interval} · ${completedCount} completed bars · latest completed close ${formatKst(latestCompleted?.close_time)}${formingNote}`);
+      } catch (err) {
+        this.errors.chart = err.message;
+        this.setStatus(`Chart unavailable: ${err.message}`, true);
+      }
+    }
+
+    async refreshReplay() {
+      const s = this.settings;
+      const seq = ++this.replaySequence;
+      this.executionChartFrame?.setStatus?.(`Running causal ${s.interval} + 1d MA${s.daily_ma_period} replay…`);
+      try {
+        const q = new URLSearchParams({
+          venue: s.venue, symbol: s.symbol, interval: s.interval,
+          horizon_bars: String(s.horizon_bars), neutral_bps: String(s.neutral_bps),
+          confidence_pct: String(s.confidence_pct), ridge_lambda: String(s.ridge_lambda),
+          train_window: String(s.train_window), min_train_samples: String(s.min_train_samples),
+          cost_bps: String(s.cost_bps),
+          use_daily_trend_filter: String(s.use_daily_trend_filter),
+          daily_ma_period: String(s.daily_ma_period),
+          hold_same_direction: String(s.hold_same_direction),
+          entry_direction_mode: String(s.entry_direction_mode),
+          use_stop_loss: String(s.use_stop_loss), stop_loss_pct: String(s.stop_loss_pct),
+          notional_usd: String(s.notional_usd), leverage: String(s.leverage),
+          momentum_lookback: String(s.momentum_lookback),
+          macd_fast: String(s.macd_fast), macd_slow: String(s.macd_slow), macd_signal: String(s.macd_signal),
+          rsi_period: String(s.rsi_period), ma_fast: String(s.ma_fast), ma_slow: String(s.ma_slow),
+          ma_slope_lookback: String(s.ma_slope_lookback), atr_period: String(s.atr_period),
+          limit: "360",
+        });
+        FEATURE_GROUPS.forEach((g) => q.set(`use_${g}`, String(Boolean(s[`use_${g}`]))));
+        const data = await apiGet(`/api/forecast-trader/replay?${q.toString()}`);
+        if (seq !== this.replaySequence) return;
+        if (!data.success) throw new Error(data.error || "Replay failed");
+        this.errors.replay = null;
+        this.replayPayload = data;
+        this.renderConditions();
+        this.renderReplaySummary();
+        this.renderNativeSignalArrows();
+        this.renderTrendBands();
+        this.rebuildCombinedMarkers();
+        this.renderHistoryTable();
+        const sum = data.summary || {};
+        this.executionChartFrame?.setStatus?.(`PAPER REPLAY (${s.cost_bps}bp fee basis) · ${sum.trades ?? 0} trades · ${sum.eval_bars ?? 0} completed ${s.interval} bars · latest source ${formatKst(data.latest_condition_time)}`);
+        this.executionChartFrame?.setSecondaryStatus?.(s.use_daily_trend_filter ? `1d MA${s.daily_ma_period} Filter ACTIVE` : "1d MA Filter OFF");
+        window.updateMainTabLoading?.("priceforecast");
+      } catch (err) {
+        if (seq !== this.replaySequence) return;
+        this.errors.replay = err.message;
+        this.executionChartFrame?.setStatus?.(`Replay unavailable: ${err.message}`);
+        window.updateMainTabLoading?.("priceforecast");
+      }
+    }
+
+    renderStatusError(msg) {
+      const badge = document.getElementById("pfLiveBadge");
+      if (badge) { badge.textContent = "TELEMETRY ERROR"; badge.className = "pfState err"; }
+      const banner = document.getElementById("pfAlertBanner");
+      if (banner) {
+        banner.style.display = "block";
+        banner.className = "pfErrorBox";
+        banner.textContent = `Account/Bot telemetry unavailable: ${msg}`;
+      }
+      document.getElementById("pfAcctEquity").textContent = "—";
+      document.getElementById("pfAcctMargin").textContent = "—";
+      document.getElementById("pfAcctSource").textContent = "UNAVAILABLE";
+    }
+
+    renderStatusAndAccount() {
+      const data = this.statusPayload;
+      const bot = data?.bot;
+      const acct = data?.account;
+      if (!data || !bot) return;
+
+      const isEnabled = Boolean(bot.enabled);
+      const blocked = Boolean(bot.execution_blocked || bot.recovery_required);
+      const badge = document.getElementById("pfLiveBadge");
+      if (badge) {
+        badge.textContent = blocked ? "BLOCKED / RECONCILE" : isEnabled ? "LIVE · ARMED" : "PAUSED · PAPER ONLY";
+        badge.className = `pfState ${blocked ? "err" : isEnabled ? "" : "off"}`;
+      }
+      const navPill = document.getElementById("navPillForecastTrader");
+      if (navPill) {
+        navPill.textContent = isEnabled ? "LIVE" : "4H";
+        navPill.style.background = isEnabled ? "#16a34a" : "#0891b2";
+      }
+      const toggleBtn = document.getElementById("pfBtnToggleLive");
+      if (toggleBtn) {
+        toggleBtn.textContent = isEnabled ? "⏸ Pause Live Bot" : "▶ Start Live Bot";
+        toggleBtn.className = `pfBtn ${isEnabled ? "pause" : "arm"} terminal-action-control`;
+      }
+      const venuePill = document.getElementById("pfVenuePill");
+      if (venuePill) venuePill.textContent = `${acct?.venue_label || bot.venue} · ${bot.selected_symbol}`;
+
+      const banner = document.getElementById("pfAlertBanner");
+      const warnText = data.conflict_message || bot.blocked_reason || (!acct?.authenticated && acct?.error) || bot.last_error;
+      if (banner) {
+        if (warnText) {
+          banner.style.display = "block";
+          banner.className = (data.conflict_message || blocked) ? "pfErrorBox" : "pfWarnBox";
+          banner.textContent = warnText;
+        } else {
+          banner.style.display = "none";
         }
       }
-    }
 
-    renderResult(options = {}) {
-      const result = this.result;
-      const market = this.loadedMarket || this.settings;
-      const title = document.getElementById("pfChartTitle");
-      const subtitle = document.getElementById("pfChartSubtitle");
-      if (title) title.textContent = `${market.symbol} · ${market.interval}`;
-      if (subtitle) subtitle.textContent = `${this.settings.horizon_bars} bar horizon · completed candles only · forming candle excluded`;
-      this.syncFeatureStates();
-      if (!result || result.error) {
-        this.setStatus(result?.error || "Forecast unavailable.", true);
-        this.renderUnavailable(result?.error || "Unavailable");
-        return;
+      const eqEl = document.getElementById("pfAcctEquity");
+      const marEl = document.getElementById("pfAcctMargin");
+      const srcEl = document.getElementById("pfAcctSource");
+      const expEl = document.getElementById("pfAcctExposure");
+      const cur = acct?.currency || "USDT";
+      if (acct?.authenticated && finite(acct.equity)) {
+        eqEl.textContent = `$${Number(acct.equity).toFixed(2)} ${cur}`;
+        marEl.textContent = finite(acct.available_margin) ? `$${Number(acct.available_margin).toFixed(2)} ${cur}` : "—";
+        const ageSec = acct.updated_ms ? Math.max(0, Math.round((Date.now() - Number(acct.updated_ms)) / 1000)) : null;
+        srcEl.textContent = `${acct.source}${acct.stale ? " (refreshing)" : ""}${ageSec !== null ? ` · ${ageSec}s ago` : ""}`;
+        const otherCnt = (acct.other_positions || []).length;
+        expEl.textContent = `Account gross $${Number(acct.account_gross_notional || 0).toFixed(2)}${otherCnt ? ` · +${otherCnt} other bot pos` : ""}`;
+      } else {
+        eqEl.textContent = "—";
+        marEl.textContent = "—";
+        srcEl.textContent = acct?.error || "UNAVAILABLE";
+        expEl.textContent = "Do not rely on cached zero";
       }
-      this.renderChart(options.fit !== false);
-      this.renderLatest();
-      this.renderValidation();
-      this.renderFeatureValues();
+
+      const selPos = acct?.positions || [];
+      const openPosEl = document.getElementById("pfOpenPos");
+      const openPosSub = document.getElementById("pfOpenPosSub");
+      const uPnlEl = document.getElementById("pfUnrealizedPnl");
+      if (selPos.length) {
+        const p = selPos[0];
+        const qty = Number(p.size ?? p.position_amt ?? 0);
+        const side = p.side || (qty > 0 ? "LONG" : "SHORT");
+        openPosEl.textContent = `${side} ${Math.abs(qty).toFixed(4)} ${bot.selected_symbol}`;
+        openPosEl.style.color = side === "LONG" ? "#16a34a" : "#dc2626";
+        openPosSub.textContent = `Entry ${formatPrice(p.entry_price, bot.selected_symbol)} · $${Number(p.notional || 0).toFixed(2)}`;
+        const upnl = Number(acct.unrealized_pnl || 0);
+        uPnlEl.textContent = `${upnl >= 0 ? "+" : "-"}$${Math.abs(upnl).toFixed(2)}`;
+        uPnlEl.style.color = upnl > 0 ? "#16a34a" : upnl < 0 ? "#dc2626" : "#0f172a";
+      } else {
+        openPosEl.textContent = "0 Open (Flat)";
+        openPosEl.style.color = "#0f172a";
+        openPosSub.textContent = `Live size target: $${Number(bot.effective_order_usd || 200).toFixed(0)} (${bot.strategy_interval})`;
+        uPnlEl.textContent = "$0.00";
+        uPnlEl.style.color = "#0f172a";
+      }
+      document.getElementById("pfLastBotAction").textContent = bot.last_action || "Awaiting next completed candle";
+
+      const vCount = Number(bot.verified_exit_count || 0);
+      const vPnl = Number(bot.verified_realized_pnl_usd || 0);
+      const rEl = document.getElementById("pfRealizedPnl");
+      rEl.textContent = vCount ? `${vPnl >= 0 ? "+" : "-"}$${Math.abs(vPnl).toFixed(2)}` : "$0.00";
+      rEl.style.color = vPnl > 0 ? "#16a34a" : vPnl < 0 ? "#dc2626" : "#0f172a";
+      document.getElementById("pfRealizedCount").textContent = `${vCount} verified exchange exits`;
+
+      // Guard against stale or conflicting safeguard badge
+      const guardBadge = document.getElementById("pfCondGuardBadge");
+      const guardDetail = document.getElementById("pfCondGuardDetail");
+      if (guardBadge && guardDetail) {
+        if (data.conflict_message || blocked) {
+          guardBadge.textContent = "BLOCKED";
+          guardBadge.className = "pfState err";
+          guardDetail.textContent = data.conflict_message || bot.blocked_reason || "Blocked";
+        } else if (!acct?.authenticated) {
+          guardBadge.textContent = "UNAVAILABLE";
+          guardBadge.className = "pfState wait";
+          guardDetail.textContent = acct?.error || "Telemetry unavailable";
+        } else {
+          guardBadge.textContent = "PASS";
+          guardBadge.className = "pfState";
+          guardDetail.textContent = `OK · Leverage ≤ ${bot.gross_leverage_cap}x · Free margin sufficient`;
+        }
+      }
+      this.renderHistoryTable();
+      this.renderConditions();
+      this.applyExecutionLock();
     }
 
-    renderUnavailable(message) {
-      ["pfProbUp", "pfProbNeutral", "pfProbDown", "pfExpected", "pfSigma", "pfPredictionCount", "pfHitRate", "pfRankIc", "pfBrier", "pfNetBps"].forEach((id) => {
-        const node = document.getElementById(id); if (node) node.textContent = "—";
-      });
-      const badge = document.getElementById("pfForecastBadge");
-      if (badge) { badge.textContent = "UNAVAILABLE"; badge.className = "pfState off"; }
-      const validation = document.getElementById("pfValidationStatus");
-      if (validation) { validation.textContent = "UNAVAILABLE"; validation.className = "pfState off"; }
-      const source = document.getElementById("pfForecastSource");
-      if (source) source.textContent = message;
+    renderConditions() {
+      const ev = this.replayPayload?.latest_evaluation || this.botState?.last_evaluation;
+      if (!ev) return;
+      const overallBadge = document.getElementById("pfEvalStatusBadge");
+      const dailyBadge = document.getElementById("pfCondDailyBadge");
+      const dailyDetail = document.getElementById("pfCondDailyDetail");
+      const confBadge = document.getElementById("pfCondConfBadge");
+      const confDetail = document.getElementById("pfCondConfDetail");
+      const edgeBadge = document.getElementById("pfCondEdgeBadge");
+      const edgeDetail = document.getElementById("pfCondEdgeDetail");
+      const evalSource = document.getElementById("pfEvalSource");
+
+      const dirLabel = ev.direction ? String(ev.direction).toUpperCase() : "NEUTRAL";
+      if (overallBadge) {
+        overallBadge.textContent = ev.entry_allowed ? `${dirLabel} · READY` : `${dirLabel} · WAITING`;
+        overallBadge.className = `pfState ${ev.entry_allowed ? "" : "wait"}`;
+      }
+      if (!ev.use_daily_trend_filter) {
+        dailyBadge.textContent = "OFF";
+        dailyBadge.className = "pfState off";
+        dailyDetail.textContent = "1d MA filter disabled (allows both directions)";
+      } else if (!ev.daily_ready) {
+        dailyBadge.textContent = "UNAVAILABLE";
+        dailyBadge.className = "pfState err";
+        dailyDetail.textContent = "Completed 1d MA unavailable";
+      } else {
+        const allowTxt = ev.daily_trend > 0 ? "LONG ONLY" : ev.daily_trend < 0 ? "SHORT ONLY" : "NEUTRAL";
+        dailyBadge.textContent = ev.side_allowed_by_daily ? `PASS (${allowTxt})` : `WAITING (${allowTxt})`;
+        dailyBadge.className = `pfState ${ev.side_allowed_by_daily ? "" : "wait"}`;
+        dailyDetail.textContent = `1d Close ${formatPrice(ev.daily_close, ev.symbol)} vs MA${ev.daily_ma_period} ${formatPrice(ev.daily_ma, ev.symbol)} (${formatKst(ev.daily_close_time)})`;
+      }
+
+      confBadge.textContent = ev.confidence_pass ? `PASS (${Number(ev.confidence_pct).toFixed(1)}%)` : `WAITING (${Number(ev.confidence_pct).toFixed(1)}%)`;
+      confBadge.className = `pfState ${ev.confidence_pass ? "" : "wait"}`;
+      confDetail.textContent = `${dirLabel} conf ${Number(ev.confidence_pct).toFixed(1)}% vs min ${Number(ev.min_confidence_pct).toFixed(0)}%`;
+
+      const rawDirectional = ev.raw_side !== 0;
+      edgeBadge.textContent = rawDirectional ? `PASS (${ev.expected_bps >= 0 ? "+" : ""}${Number(ev.expected_bps).toFixed(1)} bp)` : "NEUTRAL";
+      edgeBadge.className = `pfState ${rawDirectional ? "" : "wait"}`;
+      edgeDetail.textContent = `UP ${(Number(ev.probabilities?.up || 0) * 100).toFixed(1)}% · N ${(Number(ev.probabilities?.neutral || 0) * 100).toFixed(1)}% · DN ${(Number(ev.probabilities?.down || 0) * 100).toFixed(1)}%`;
+
+      if (evalSource) {
+        evalSource.textContent = `Source: ${ev.venue === "lighter" ? "Lighter" : "Binance Futures"} completed ${ev.interval} bar closed ${formatKst(ev.close_time)} · ${ev.train_samples} samples`;
+      }
     }
 
-    renderChart(fit) {
-      if (!this.candleSeries || !this.result?.indicators) return;
-      const { maFast, maSlow } = this.result.indicators;
-      this.candleSeries.setData(this.bars.map((bar) => ({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
-      this.maFastSeries.setData(this.bars.map((bar, index) => finite(maFast[index]) ? { time: bar.time, value: Number(maFast[index]) } : null).filter(Boolean));
-      this.maSlowSeries.setData(this.bars.map((bar, index) => finite(maSlow[index]) ? { time: bar.time, value: Number(maSlow[index]) } : null).filter(Boolean));
-      const markers = this.result.forecast_signals.filter((signal) => signal.qualified).slice(-160).map((signal) => ({
-        time: signal.source_time,
-        position: signal.direction === "up" ? "belowBar" : signal.direction === "down" ? "aboveBar" : "inBar",
-        color: signal.direction === "up" ? "#16a34a" : signal.direction === "down" ? "#dc2626" : "#64748b",
-        shape: signal.direction === "up" ? "arrowUp" : signal.direction === "down" ? "arrowDown" : "circle",
-        text: "",
-      }));
-      const latest = this.result.latest;
-      markers.push({
-        time: latest.source_time,
-        position: latest.direction === "up" ? "belowBar" : latest.direction === "down" ? "aboveBar" : "inBar",
-        color: "#00a7c4",
-        shape: latest.direction === "up" ? "arrowUp" : latest.direction === "down" ? "arrowDown" : "circle",
-        text: `NEXT ${(latest.confidence * 100).toFixed(0)}%`,
-      });
-      markers.sort((left, right) => Number(left.time) - Number(right.time));
-      this.candleSeries.setMarkers(markers);
-      const host = document.getElementById("pfChartHost");
+    renderCandlesAndMAs(fit) {
+      if (!this.candleSeries || !this.bars.length) return;
+      this.candleSeries.setData(this.bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
+      const s = this.settings;
+      const maFast = simpleMovingAverage(this.bars.map((b) => b.close), s.ma_fast);
+      const maSlow = simpleMovingAverage(this.bars.map((b) => b.close), s.ma_slow);
+      this.maFastSeries?.setData(this.bars.map((b, i) => finite(maFast[i]) ? { time: b.time, value: maFast[i] } : null).filter(Boolean));
+      this.maSlowSeries?.setData(this.bars.map((b, i) => finite(maSlow[i]) ? { time: b.time, value: maSlow[i] } : null).filter(Boolean));
+      if (this.dailyMaSeriesPlot) {
+        const dData = s.use_daily_trend_filter ? this.dailyMaSeries : [];
+        this.dailyMaSeriesPlot.setData(dData);
+      }
       if (fit) {
+        const host = document.getElementById("pfChartHost");
         if (host && host.clientWidth > 0 && host.clientHeight > 0) {
-          this.chart?.timeScale()?.fitContent();
+          const range = globalThis.StrategyExecutionChartController?.initialRange?.(this.bars.length, 96);
+          if (range) this.chart?.timeScale()?.setVisibleLogicalRange?.(range);
+          else this.chart?.timeScale()?.fitContent?.();
           this.pendingFit = false;
         } else {
           this.pendingFit = true;
         }
       }
+      this.renderTrendBands();
     }
 
-    renderLatest() {
-      const latest = this.result.latest;
-      const probability = (key) => `${(latest.probabilities[key] * 100).toFixed(1)}%`;
-      document.getElementById("pfProbUp").textContent = probability("up");
-      document.getElementById("pfProbNeutral").textContent = probability("neutral");
-      document.getElementById("pfProbDown").textContent = probability("down");
-      document.getElementById("pfExpected").textContent = `${latest.expected_bps >= 0 ? "+" : ""}${latest.expected_bps.toFixed(1)} bp`;
-      document.getElementById("pfSigma").textContent = `${latest.residual_sigma_bps.toFixed(1)} bp`;
-      const badge = document.getElementById("pfForecastBadge");
-      if (badge) {
-        badge.textContent = `${latest.direction.toUpperCase()} · ${latest.qualified ? "QUALIFIED" : "LOW CONFIDENCE"}`;
-        badge.className = `pfState${latest.qualified ? "" : " off"}`;
+    renderNativeSignalArrows() {
+      if (!this.candleSeries) return;
+      if (!this.showSignalArrows || !this.replayPayload?.entry_signals) {
+        this.candleSeries.setMarkers([]);
+        return;
       }
-      const market = this.loadedMarket || this.settings;
-      const intervalSeconds = INTERVAL_SECONDS[market.interval];
-      const sourceClose = latest.source_time + intervalSeconds;
-      const targetClose = sourceClose + intervalSeconds * this.settings.horizon_bars;
-      const source = document.getElementById("pfForecastSource");
-      if (source) source.textContent = `PAPER MODEL · Source candle closed ${formatKst(sourceClose)} · target close ${formatKst(targetClose)} · ${latest.train_samples} matured training samples · neutral band ±${this.settings.neutral_bps} bp`;
+      const sigs = this.replayPayload.entry_signals.filter((s) => s.entry_allowed).slice(-160);
+      this.candleSeries.setMarkers(sigs.map((sig) => ({
+        time: sig.time,
+        position: sig.side > 0 ? "belowBar" : "aboveBar",
+        color: sig.side > 0 ? "rgba(22,163,74,0.75)" : "rgba(220,38,38,0.75)",
+        shape: sig.side > 0 ? "arrowUp" : "arrowDown",
+        text: "",
+      })));
     }
 
-    renderFeatureValues() {
-      const metrics = this.result.latest.feature_metrics;
-      const market = this.loadedMarket || this.settings;
-      const values = {
-        momentum: `1-bar ${metrics.one_bar_bps >= 0 ? "+" : ""}${formatNumber(metrics.one_bar_bps, 1)} bp · lookback ${metrics.lookback_bps >= 0 ? "+" : ""}${formatNumber(metrics.lookback_bps, 1)} bp`,
-        macd: `H ${formatNumber(metrics.macd_hist_atr, 3)} ATR · Δ ${formatNumber(metrics.macd_hist_diff_atr, 3)}`,
-        rsi: `${formatNumber(metrics.rsi, 1)} · Δ ${metrics.rsi_delta >= 0 ? "+" : ""}${formatNumber(metrics.rsi_delta, 1)}`,
-        ma: `price ${metrics.ma_distance_atr >= 0 ? "+" : ""}${formatNumber(metrics.ma_distance_atr, 2)} ATR · slope ${metrics.ma_slope_atr >= 0 ? "+" : ""}${formatNumber(metrics.ma_slope_atr, 2)} · ${metrics.ma_ride_hang > 0 ? "RIDE" : metrics.ma_ride_hang < 0 ? "HANG" : "NO CROSS"}`,
-        volatility: `ATR ${formatNumber(metrics.atr_pct, 3)}% · σ ${formatNumber(metrics.volatility_bps, 1)} bp · CLV ${metrics.candle_clv >= 0 ? "+" : ""}${formatNumber(metrics.candle_clv, 2)}`,
-      };
-      FEATURE_GROUPS.forEach((group) => {
-        const node = document.getElementById(`pfValue_${group}`);
-        if (node) node.textContent = this.settings[`use_${group}`] ? values[group] : "Excluded from fit";
+    renderTrendBands() {
+      const layer = document.getElementById("pfTrendBandLayer");
+      const host = document.getElementById("pfChartHost");
+      if (!layer || !host || !this.chart) return;
+      layer.replaceChildren();
+      const trendPts = this.replayPayload?.entry_trend;
+      if (!this.settings.use_daily_trend_filter || !Array.isArray(trendPts) || !trendPts.length) return;
+      const ts = this.chart.timeScale();
+      const hostWidth = host.clientWidth || 0;
+      const runs = [];
+      let cur = null;
+      for (const pt of trendPts) {
+        const sign = Number(pt.sign || 0);
+        if (!sign) {
+          if (cur) runs.push(cur);
+          cur = null;
+          continue;
+        }
+        if (!cur || cur.sign !== sign) {
+          if (cur) runs.push(cur);
+          cur = { sign, start: pt.time, end: pt.time };
+        } else {
+          cur.end = pt.time;
+        }
+      }
+      if (cur) runs.push(cur);
+      let barW = 8;
+      if (trendPts.length > 1) {
+        const x2 = ts.timeToCoordinate(trendPts.at(-1).time);
+        const x1 = ts.timeToCoordinate(trendPts.at(-2).time);
+        if (Number.isFinite(x1) && Number.isFinite(x2)) barW = Math.max(2, Math.abs(x2 - x1));
+      }
+      const frag = document.createDocumentFragment();
+      for (const run of runs) {
+        const xStart = ts.timeToCoordinate(run.start);
+        const xEnd = ts.timeToCoordinate(run.end);
+        if (!Number.isFinite(xStart) || !Number.isFinite(xEnd)) continue;
+        const left = Math.max(0, Math.min(hostWidth, Math.min(xStart, xEnd) - barW / 2));
+        const right = Math.max(0, Math.min(hostWidth, Math.max(xStart, xEnd) + barW / 2));
+        if (right <= left) continue;
+        const band = document.createElement("div");
+        band.style.cssText = `position:absolute;top:0;bottom:0;left:${left}px;width:${right - left}px;background:${run.sign > 0 ? "rgba(22,163,74,0.08)" : "rgba(220,38,38,0.08)"};pointer-events:none;`;
+        frag.appendChild(band);
+      }
+      layer.appendChild(frag);
+    }
+
+    rebuildCombinedMarkers() {
+      const virtual = (this.replayPayload?.markers || []).map((m, idx) => ({
+        ...m,
+        markerKey: `virtual:${m.pairKey}:${m.is_entry ? "E" : "X"}:${m.time}:${idx}`,
+      }));
+      const actual = this.actualMarkers || [];
+      this.rawExecutionMarkers = [...actual, ...virtual];
+      this.renderOverlayMarkers();
+    }
+
+    isMarkerVisible(marker) {
+      if (marker.source === "actual" && !this.showActualMarkers) return false;
+      if (marker.source === "virtual" && !this.showVirtualMarkers) return false;
+      return true;
+    }
+
+    getTradePairs() {
+      const visible = this.rawExecutionMarkers.filter((m) => this.isMarkerVisible(m));
+      const map = new Map();
+      visible.forEach((m) => {
+        if (!m.pairKey) return;
+        const p = map.get(m.pairKey) || { entries: [], exits: [] };
+        if (m.is_entry) p.entries.push(m);
+        else p.exits.push(m);
+        map.set(m.pairKey, p);
       });
-      const inputSource = document.getElementById("pfInputSource");
-      const bar = this.bars[this.result.latest.source_index];
-      if (inputSource && bar) inputSource.textContent = `Source: Binance futures completed ${market.interval} candle · ${formatKst(bar.close_time)} · ${this.result.latest.feature_names.length} active numeric inputs`;
+      const pairs = [];
+      map.forEach((p, pairKey) => {
+        if (p.entries.length && p.exits.length) {
+          for (let i = 0; i < p.entries.length; i += 1) {
+            pairs.push({ entry: p.entries[i], exit: p.exits[i] || p.exits[p.exits.length - 1], pairKey });
+          }
+        }
+      });
+      return pairs;
     }
 
-    renderValidation() {
-      const validation = this.result.validation;
-      const market = this.loadedMarket || this.settings;
-      document.getElementById("pfPredictionCount").textContent = `${validation.qualified} / ${validation.predictions}`;
-      document.getElementById("pfHitRate").textContent = finite(validation.hit_rate_pct) ? `${validation.hit_rate_pct.toFixed(1)}%` : "N/A";
-      document.getElementById("pfRankIc").textContent = finite(validation.rank_ic) ? validation.rank_ic.toFixed(3) : "N/A";
-      document.getElementById("pfBrier").textContent = finite(validation.brier) ? validation.brier.toFixed(3) : "N/A";
-      document.getElementById("pfNetBps").textContent = finite(validation.average_net_bps) ? `${validation.average_net_bps >= 0 ? "+" : ""}${validation.average_net_bps.toFixed(1)} bp` : "N/A";
-      const status = document.getElementById("pfValidationStatus");
-      if (status) { status.textContent = `${validation.predictions} OOS FORECASTS`; status.className = "pfState"; }
-      const body = document.getElementById("pfForecastRows");
+    renderOverlayMarkers() {
+      const layer = document.getElementById("pfTradeMarkerTargets");
+      const host = document.getElementById("pfChartHost");
+      if (!layer || !host || !this.chart || !this.candleSeries) return;
+      const w = host.clientWidth || 0;
+      const h = layer.clientHeight || 424;
+      layer.textContent = "";
+      const visible = this.rawExecutionMarkers.filter((m) => this.isMarkerVisible(m));
+      const groups = new Map();
+      visible.forEach((m) => {
+        const arr = groups.get(m.time) || [];
+        arr.push(m);
+        groups.set(m.time, arr);
+      });
+      const frag = document.createDocumentFragment();
+      groups.forEach((markers) => {
+        const x = this.chart.timeScale().timeToCoordinate(markers[0].time);
+        if (!Number.isFinite(x) || x < -30 || x > w + 30) {
+          markers.forEach((m) => { m._targetX = null; m._targetY = null; });
+          return;
+        }
+        const items = (this.groupTradesAsRange && markers.length > 1) ? [markers[0]] : markers;
+        items.forEach((marker) => {
+          const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
+          const y = Number.isFinite(price) ? this.candleSeries.priceToCoordinate(price) : null;
+          if (!Number.isFinite(y) || y < 0 || y > h) {
+            marker._targetX = x;
+            marker._targetY = null;
+            return;
+          }
+          const finalY = Math.max(6, Math.min(h - 6, y));
+          markers.forEach((m) => { if (items.length === 1) { m._targetX = x; m._targetY = finalY; } });
+          marker._targetX = x;
+          marker._targetY = finalY;
+
+          const isEntry = Boolean(marker.is_entry);
+          const isShort = marker.direction === "short";
+          const isSell = isShort === isEntry;
+          const color = isSell ? "#dc2626" : "#16a34a";
+          const fill = marker.hypothetical ? "none" : color;
+
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.setAttribute("aria-label", marker.hoverText || "Trade marker");
+          if (isEntry) {
+            btn.innerHTML = `<svg width="9" height="9" viewBox="0 0 8 8" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,0.5 7.5,4 0.5,7.5" fill="${fill}" stroke="${color}" stroke-width="${marker.hypothetical ? "1.1" : "0.75"}" stroke-linejoin="round"/></svg>`;
+            btn.style.cssText = `appearance:none;position:absolute;left:${x}px;top:${finalY}px;transform:translate(-100%,-50%);width:9px;height:9px;padding:0;border:0;background:transparent;cursor:pointer;pointer-events:auto;`;
+          } else {
+            btn.innerHTML = `<svg width="9" height="9" viewBox="0 0 8 8" style="display:block;overflow:visible;pointer-events:none;"><polygon points="7.5,0.5 0.5,4 7.5,7.5" fill="${fill}" stroke="${color}" stroke-width="${marker.hypothetical ? "1.1" : "0.75"}" stroke-linejoin="round"/></svg>`;
+            btn.style.cssText = `appearance:none;position:absolute;left:${x}px;top:${finalY}px;transform:translate(0,-50%);width:9px;height:9px;padding:0;border:0;background:transparent;cursor:pointer;pointer-events:auto;`;
+          }
+          btn.addEventListener("mouseenter", () => {
+            this.activeHoveredExecutionMarkerKey = marker.markerKey;
+            this.activeHoveredPairKey = marker.pairKey;
+            this.updateHoverPopup(marker);
+            this.renderTradeTriangles();
+          });
+          btn.addEventListener("mouseleave", () => {
+            this.activeHoveredExecutionMarkerKey = null;
+            this.activeHoveredPairKey = null;
+            const sel = this.rawExecutionMarkers.find((m) => m.markerKey === this.selectedExecutionMarkerKey) || null;
+            this.updateHoverPopup(sel);
+            this.renderTradeTriangles();
+          });
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.selectedExecutionMarkerKey = marker.markerKey;
+            this.selectedPairKey = marker.pairKey;
+            this.updateHoverPopup(marker);
+            this.renderTradeTriangles();
+          });
+          frag.appendChild(btn);
+        });
+      });
+      layer.appendChild(frag);
+      this.renderTradeTriangles();
+    }
+
+    updateHoverPopup(marker) {
+      const box = document.getElementById("pfTradeMarkerHover");
+      if (!box) return;
+      if (!marker) {
+        box.style.display = "none";
+        box.textContent = "";
+        return;
+      }
+      box.style.display = "block";
+      box.textContent = `${formatKst(marker.time)} · ${marker.hoverText}`;
+    }
+
+    renderTradeTriangles() {
+      const svg = document.getElementById("pfTradeTrianglesLayer");
+      if (!svg || !this.chart || !this.candleSeries) return;
+      svg.innerHTML = "";
+      const activePair = this.activeHoveredPairKey || this.selectedPairKey;
+      if (!activePair) return;
+      const pairs = this.getTradePairs();
+      const frag = document.createDocumentFragment();
+      pairs.forEach(({ entry, exit, pairKey }) => {
+        if (pairKey !== activePair) return;
+        const p1 = Number(entry.ratio ?? entry.entry_price);
+        const p2 = Number(exit.ratio ?? exit.exit_price);
+        let x1 = entry._targetX ?? this.chart.timeScale().timeToCoordinate(entry.time);
+        let x2 = exit._targetX ?? this.chart.timeScale().timeToCoordinate(exit.time);
+        let y1 = this.candleSeries.priceToCoordinate(p1);
+        let y2 = this.candleSeries.priceToCoordinate(p2);
+        if (!Number.isFinite(x1) || !Number.isFinite(x2) || !Number.isFinite(y1) || !Number.isFinite(y2)) return;
+        const ox1 = x1, oy1 = y1, ox2 = x2, oy2 = y2;
+        if (x1 > x2) { [x1, x2] = [x2, x1]; [y1, y2] = [y2, y1]; }
+        const isShort = entry.direction === "short";
+        const isProfit = (exit.pnl != null) ? Number(exit.pnl) > 0 : (isShort ? p1 >= p2 : p2 >= p1);
+        let cornerX, cornerY;
+        if (isShort) {
+          cornerX = y1 <= y2 ? x2 : x1;
+          cornerY = y1 <= y2 ? y1 : y2;
+        } else {
+          cornerX = y1 <= y2 ? x1 : x2;
+          cornerY = y1 <= y2 ? y2 : y1;
+        }
+        const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+        poly.setAttribute("points", `${x1.toFixed(1)},${y1.toFixed(1)} ${cornerX.toFixed(1)},${cornerY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`);
+        poly.setAttribute("fill", isProfit ? "rgba(34,197,94,0.14)" : "rgba(239,68,68,0.14)");
+        poly.setAttribute("stroke", isProfit ? "rgba(22,163,74,0.7)" : "rgba(220,38,38,0.7)");
+        poly.setAttribute("stroke-width", "1.2");
+        frag.appendChild(poly);
+
+        const diag = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        diag.setAttribute("x1", ox1.toFixed(1)); diag.setAttribute("y1", oy1.toFixed(1));
+        diag.setAttribute("x2", ox2.toFixed(1)); diag.setAttribute("y2", oy2.toFixed(1));
+        diag.setAttribute("stroke", isProfit ? "#16a34a" : "#dc2626");
+        diag.setAttribute("stroke-width", "1.5");
+        frag.appendChild(diag);
+      });
+      svg.appendChild(frag);
+    }
+
+    renderReplaySummary() {
+      const sum = this.replayPayload?.summary;
+      if (!sum) return;
+      document.getElementById("pfSumTrades").textContent = `${sum.trades ?? 0} (${sum.wins ?? 0} wins)`;
+      document.getElementById("pfSumWin").textContent = finite(sum.win_rate_pct) ? `${Number(sum.win_rate_pct).toFixed(1)}%` : "—";
+      const retEl = document.getElementById("pfSumReturn");
+      const ret = Number(sum.return_on_initial_pct || 0);
+      retEl.textContent = `${ret >= 0 ? "+" : ""}${ret.toFixed(1)}% (${sum.net_pnl_usd >= 0 ? "+" : "-"}$${Math.abs(Number(sum.net_pnl_usd || 0)).toFixed(2)})`;
+      retEl.style.color = ret > 0 ? "#16a34a" : ret < 0 ? "#dc2626" : "#0f172a";
+      document.getElementById("pfSumMaxDD").textContent = `-${Number(sum.max_drawdown_pct || 0).toFixed(1)}%`;
+      document.getElementById("pfSumWorst").textContent = `${Number(sum.worst_trade_pct || 0).toFixed(1)}%`;
+    }
+
+    renderHistoryTable() {
+      const body = document.getElementById("pfHistoryBody");
       if (!body) return;
-      const recent = this.result.forecast_signals.slice(-30).reverse();
-      body.innerHTML = recent.map((signal) => {
-        const color = signal.direction === "up" ? "#16a34a" : signal.direction === "down" ? "#dc2626" : "#64748b";
-        const correct = signal.direction === signal.actual_direction;
-        return `<tr><td>${formatKst(signal.source_time + INTERVAL_SECONDS[market.interval])}</td><td style="color:${color};font-weight:800;">${signal.direction.toUpperCase()}${signal.qualified ? "" : " · LOW"}</td><td>${(signal.confidence * 100).toFixed(1)}%</td><td>${signal.expected_bps >= 0 ? "+" : ""}${signal.expected_bps.toFixed(1)} bp</td><td>${signal.actual_bps >= 0 ? "+" : ""}${signal.actual_bps.toFixed(1)} bp</td><td style="color:${correct ? "#047857" : "#b91c1c"};font-weight:800;">${correct ? "MATCH" : "MISS"}</td></tr>`;
-      }).join("") || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:18px;">No validation forecasts.</td></tr>';
+      const actualEvents = (this.botState?.execution_history || []).map((ev) => ({
+        kind: "actual",
+        time: Number(ev.exit_time || ev.time || 0),
+        isExit: ev.event === "EXIT",
+        symbol: ev.symbol,
+        direction: Number(ev.original_side ?? ev.side ?? 0) > 0 ? "long" : "short",
+        qty: Number(ev.qty || 0),
+        notional: Number(ev.notional_usd || 0),
+        entryPrice: Number(ev.entry_price || (ev.event === "ENTRY" ? ev.price : 0) || 0),
+        exitPrice: ev.event === "EXIT" ? Number(ev.price || 0) : null,
+        feeUsd: ev.round_trip_fee_usd ?? ev.fee_usd,
+        grossPnl: ev.gross_pnl_usd,
+        netPnl: ev.net_pnl_usd,
+        pnlPct: ev.pnl_pct,
+        verified: Boolean(ev.pnl_authoritative),
+        status: ev.event === "EXIT" ? "CLOSED (LIVE)" : "OPEN (LIVE)",
+        pairKey: String(ev.entry_order_id || ev.order_id || ""),
+      }));
+      const paperTrades = (this.replayPayload?.trades || []).map((t) => ({
+        kind: "virtual",
+        time: Number(t.exit_time || t.entry_time || 0),
+        isExit: true,
+        symbol: t.symbol,
+        direction: t.direction,
+        qty: Number(t.qty || 0),
+        notional: Number(t.notional || 0),
+        entryPrice: Number(t.entry_price || 0),
+        exitPrice: Number(t.exit_price || 0),
+        feeUsd: Number(t.fee_usd || 0),
+        grossPnl: Number(t.gross_pnl_usd || 0),
+        netPnl: Number(t.net_pnl_usd || 0),
+        pnlPct: Number(t.roe_pct ?? t.pnl_pct ?? 0),
+        verified: true,
+        status: `PAPER · ${t.reason || "horizon"}`,
+        pairKey: String(t.pairKey || ""),
+      }));
+
+      let rows = [];
+      if (this.historyFilter === "actual") rows = actualEvents;
+      else if (this.historyFilter === "virtual") rows = paperTrades;
+      else rows = [...actualEvents, ...paperTrades];
+      rows.sort((a, b) => b.time - a.time);
+      const sliced = rows.slice(0, 80);
+      if (!sliced.length) {
+        body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:24px;">No historical trades for selected filter yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = sliced.map((r) => {
+        const isActual = r.kind === "actual";
+        const srcBadge = isActual
+          ? `<span style="background:${r.isExit ? "#e0f2fe" : "#ede9fe"};color:${r.isExit ? "#0369a1" : "#6d28d9"};padding:2px 6px;border-radius:4px;font-weight:800;">${r.isExit ? "LIVE EXIT" : "LIVE ENTRY"}</span>`
+          : `<span style="background:#f1f5f9;color:#475569;padding:2px 6px;border-radius:4px;font-weight:800;">PAPER</span>`;
+        const dirBadge = r.direction === "short"
+          ? `<span style="color:#dc2626;font-weight:800;">SHORT</span>`
+          : `<span style="color:#16a34a;font-weight:800;">LONG</span>`;
+        const pxStr = r.exitPrice
+          ? `${formatPrice(r.entryPrice, r.symbol)} → ${formatPrice(r.exitPrice, r.symbol)}`
+          : formatPrice(r.entryPrice, r.symbol);
+        const feeStr = r.feeUsd == null ? "—" : `$${Number(r.feeUsd).toFixed(4)}`;
+        const pnlStr = r.isExit && r.verified && finite(r.netPnl)
+          ? `<span style="font-weight:800;color:${r.netPnl >= 0 ? "#16a34a" : "#dc2626"}">${r.netPnl >= 0 ? "+" : "-"}$${Math.abs(r.netPnl).toFixed(2)} (${r.pnlPct >= 0 ? "+" : ""}${Number(r.pnlPct).toFixed(2)}%)</span>`
+          : (r.isExit ? '<span style="color:#b45309;">Unverified</span>' : '<span style="color:#64748b;">Open lot</span>');
+        return `<tr data-pair-key="${r.pairKey}">
+          <td style="font-family:monospace;">${formatKst(r.time)}</td>
+          <td>${srcBadge}</td>
+          <td>${dirBadge}</td>
+          <td><strong>${r.symbol}</strong><br><small style="color:#64748b;">$${r.notional.toFixed(0)} (${r.qty.toFixed(4)})</small></td>
+          <td style="font-family:monospace;font-weight:700;">${pxStr}</td>
+          <td style="font-family:monospace;color:#64748b;">${feeStr}</td>
+          <td>${pnlStr}</td>
+          <td style="font-size:10px;font-weight:700;color:${isActual ? "#047857" : "#475569"};">${r.status}</td>
+        </tr>`;
+      }).join("");
+
+      body.querySelectorAll("tr[data-pair-key]").forEach((tr) => {
+        tr.addEventListener("click", () => {
+          const pk = tr.getAttribute("data-pair-key");
+          if (!pk) return;
+          this.selectedPairKey = pk;
+          this.renderTradeTriangles();
+        });
+      });
+    }
+
+    ensureUnlocked() {
+      if (window.terminalLockManager?.isLocked) {
+        window.showToast?.("🔒 Terminal is locked. Unlock at top or enter password first.", "warn");
+        window.terminalLockManager?.openPasswordModal?.();
+        return false;
+      }
+      return true;
+    }
+
+    buildBotConfigPayload() {
+      const s = this.readControls();
+      return {
+        venue: s.venue,
+        selected_symbol: s.symbol,
+        strategy_interval: s.interval,
+        horizon_bars: s.horizon_bars,
+        neutral_bps: s.neutral_bps,
+        confidence_pct: s.confidence_pct,
+        ridge_lambda: s.ridge_lambda,
+        train_window: s.train_window,
+        min_train_samples: s.min_train_samples,
+        cost_bps: s.cost_bps,
+        use_daily_trend_filter: s.use_daily_trend_filter,
+        daily_ma_period: s.daily_ma_period,
+        hold_same_direction: s.hold_same_direction,
+        entry_direction_mode: s.entry_direction_mode,
+        use_stop_loss: s.use_stop_loss,
+        stop_loss_pct: s.stop_loss_pct,
+        notional_usd: s.notional_usd,
+        leverage: s.leverage,
+        momentum_lookback: s.momentum_lookback,
+        macd_fast: s.macd_fast, macd_slow: s.macd_slow, macd_signal: s.macd_signal,
+        rsi_period: s.rsi_period, ma_fast: s.ma_fast, ma_slow: s.ma_slow,
+        ma_slope_lookback: s.ma_slope_lookback, atr_period: s.atr_period,
+        ...Object.fromEntries(FEATURE_GROUPS.map((g) => [`use_${g}`, Boolean(s[`use_${g}`])])),
+      };
+    }
+
+    async saveConfigToBot() {
+      if (!this.ensureUnlocked()) return false;
+      try {
+        const res = await apiPost("/api/forecast-trader/config", this.buildBotConfigPayload());
+        if (res?.bot) this.botState = res.bot;
+        window.showToast?.("✅ Strategy & sizing saved to EC2 bot.", "success");
+        await this.refreshAll({ fit: false, force: true });
+        return true;
+      } catch (err) {
+        window.alert(err.message);
+        return false;
+      }
+    }
+
+    async toggleLiveBot() {
+      if (!this.ensureUnlocked()) return false;
+      const currentlyEnabled = Boolean(this.botState?.enabled);
+      const next = !currentlyEnabled;
+      try {
+        if (next) {
+          const cfg = this.buildBotConfigPayload();
+          const confirmed = window.confirm(
+            `Enable AUTONOMOUS LIVE TRADING on EC2?\n\nVenue: ${cfg.venue}\nSymbol: ${cfg.selected_symbol}\nCandle: ${cfg.strategy_interval} + 1d MA${cfg.daily_ma_period} filter\nSize: $${cfg.notional_usd} × ${cfg.leverage}x ($${(cfg.notional_usd * cfg.leverage).toFixed(0)} notional)\nMin Confidence: ${cfg.confidence_pct}%\n\nEvaluates on completed ${cfg.strategy_interval} bar closes.`
+          );
+          if (!confirmed) return false;
+          await apiPost("/api/forecast-trader/config", cfg);
+        }
+        const res = await apiPost("/api/forecast-trader/toggle", { enabled: next, confirm_live_trading: next });
+        if (res?.bot) this.botState = res.bot;
+        window.showToast?.(next ? "🟢 Live 4h Quant Bot ARMED" : "⏸ Live 4h Quant Bot PAUSED", "info");
+        await this.refreshStatus();
+        return true;
+      } catch (err) {
+        window.alert(err.message);
+        return false;
+      }
+    }
+
+    async reconcileBot() {
+      if (!this.ensureUnlocked()) return false;
+      try {
+        await apiPost("/api/forecast-trader/reconcile", {});
+        window.showToast?.("⚖ Position & pending orders reconciled.", "success");
+        await this.refreshStatus();
+        return true;
+      } catch (err) {
+        window.alert(err.message);
+        return false;
+      }
+    }
+
+    async flattenBot() {
+      if (!this.ensureUnlocked()) return false;
+      if (!window.confirm("Immediately close any open Tab 11 position at market and pause the live bot?")) return false;
+      try {
+        await apiPost("/api/forecast-trader/flatten", {});
+        window.showToast?.("🛑 Position flattened and bot paused.", "warn");
+        await this.refreshAll({ fit: false, force: true });
+        return true;
+      } catch (err) {
+        window.alert(err.message);
+        return false;
+      }
+    }
+
+    applyExecutionLock() {
+      const locked = Boolean(window.terminalLockManager?.isLocked);
+      const root = document.getElementById("tabContentPriceForecast");
+      if (root) root.classList.toggle("terminal-read-only", locked);
+      const unlockBtn = document.getElementById("pfBtnUnlock");
+      if (unlockBtn) unlockBtn.style.display = locked ? "inline-flex" : "none";
+      document.querySelectorAll("#tabContentPriceForecast .terminal-action-control").forEach((el) => {
+        el.disabled = locked;
+      });
+    }
+
+    setStatus(message, error = false) {
+      const node = document.getElementById("pfChartStatus");
+      if (!node) return;
+      node.textContent = message;
+      node.className = error ? "pfStatusBar pfErrorBox" : "pfStatusBar";
     }
 
     resize() {
       const host = document.getElementById("pfChartHost");
       if (!host || !this.chart) return;
-      this.chart.applyOptions({ width: Math.max(320, host.clientWidth), height: Math.max(320, host.clientHeight) });
-      if (this.pendingFit && host.clientWidth > 0 && host.clientHeight > 0) {
-        this.chart.timeScale()?.fitContent();
+      this.chart.applyOptions({ width: Math.max(320, host.clientWidth), height: 450 });
+      if (this.pendingFit && host.clientWidth > 0 && host.clientHeight > 0 && this.bars.length) {
+        const range = globalThis.StrategyExecutionChartController?.initialRange?.(this.bars.length, 96);
+        if (range) this.chart?.timeScale()?.setVisibleLogicalRange?.(range);
+        else this.chart?.timeScale()?.fitContent?.();
         this.pendingFit = false;
       }
+      this.renderTrendBands();
+      this.renderOverlayMarkers();
     }
 
     startPolling() {
       this.stopPolling();
       this.pollTimer = setInterval(() => {
         if (!this.active) return;
+        this.refreshStatus();
         const intervalMs = INTERVAL_SECONDS[this.settings.interval] * 1000;
-        if (Date.now() - this.lastLoadedAt >= Math.min(intervalMs, 60000)) this.refresh({ fit: false });
-      }, 30000);
+        if (Date.now() - this.lastLoadedAt >= Math.min(intervalMs, 60000)) {
+          this.refreshChart({ fit: false });
+          this.refreshReplay();
+          this.lastLoadedAt = Date.now();
+        }
+      }, 15000);
     }
 
     stopPolling() {
@@ -1256,8 +2112,8 @@
       this.active = true;
       this.mount();
       this.resize();
-      if (this.mounted && !this.loading && (!this.loaded || Date.now() - this.lastLoadedAt > Math.min(INTERVAL_SECONDS[this.settings.interval] * 1000, 60000))) {
-        this.refresh({ fit: !this.loaded });
+      if (this.mounted && !this.loading && (!this.loaded || Date.now() - this.lastLoadedAt > 30000)) {
+        this.refreshAll({ fit: !this.loaded });
       }
       this.startPolling();
     }
