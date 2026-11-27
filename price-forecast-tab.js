@@ -2413,6 +2413,24 @@
       svg.appendChild(frag);
     }
 
+    focusTradePair(pairKey) {
+      if (!pairKey || !this.chart) return false;
+      const pair = this.getTradePairs().find((candidate) => candidate.pairKey === pairKey);
+      if (!pair) return false;
+      const entryTime = Number(pair.entry?.time);
+      const exitTime = Number(pair.exit?.time);
+      if (!Number.isFinite(entryTime) || !Number.isFinite(exitTime)) return false;
+      const intervalSeconds = INTERVAL_SECONDS[this.settings.interval] || INTERVAL_SECONDS["4h"];
+      const padding = intervalSeconds * 6;
+      this.selectedPairKey = pairKey;
+      this.chart.timeScale().setVisibleRange({
+        from: Math.min(entryTime, exitTime) - padding,
+        to: Math.max(entryTime, exitTime) + padding,
+      });
+      requestAnimationFrame(() => this.renderOverlayMarkers());
+      return true;
+    }
+
     renderReplaySummary() {
       const sum = this.replayPayload?.summary;
       if (!sum) return;
@@ -2507,8 +2525,10 @@
         tr.addEventListener("click", () => {
           const pk = tr.getAttribute("data-pair-key");
           if (!pk) return;
-          this.selectedPairKey = pk;
-          this.renderTradeTriangles();
+          if (!this.focusTradePair(pk)) {
+            this.selectedPairKey = pk;
+            this.renderTradeTriangles();
+          }
         });
       });
     }

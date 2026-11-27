@@ -125,6 +125,8 @@ assert.match(source, /pfTradeTrianglesLayer/,
   "Tab 11 chart must include Tab 4 SVG paired trade triangles layer");
 assert.match(source, /pfHistoryBody/,
   "Tab 11 must include Tab 4-style Historical Trades table");
+assert.match(source, /focusTradePair[\s\S]*?setVisibleRange/,
+  "clicking a historical trade must move the chart to its paired entry and exit markers");
 assert.match(source, /terminal-action-control/,
   "live bot buttons must integrate with fail-closed read-only lock");
 assert.doesNotMatch(source, /Enable AUTONOMOUS LIVE TRADING/,
