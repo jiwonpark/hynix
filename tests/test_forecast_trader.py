@@ -190,6 +190,67 @@ class ForecastTraderTests(unittest.TestCase):
         self.assertEqual(py_step["direction"], js_step["direction"])
         self.assertEqual(py_step["feature_names"], js_step["feature_names"])
 
+    def test_python_matches_js_full_replay_and_trades(self):
+        bars = _synthetic_4h_bars(360)
+        daily = _synthetic_1d_bars_from_4h(bars, bias="cycle")
+        cfg = {
+            "symbol": "ETHUSDT",
+            "interval": "4h",
+            "horizon_bars": 1,
+            "neutral_bps": 8,
+            "confidence_pct": 44,
+            "ridge_lambda": 400,
+            "train_window": 200,
+            "min_train_samples": 100,
+            "cost_bps": 10,
+            "use_daily_trend_filter": True,
+            "daily_ma_period": 20,
+            "hold_same_direction": True,
+            "use_stop_loss": True,
+            "stop_loss_pct": 2.5,
+            "notional_usd": 200.0,
+            "leverage": 2.0,
+        }
+        py_rep = causal_ridge.run_causal_replay(
+            bars, daily, cfg, notional_usd=200.0, leverage=2.0, max_eval_bars=120, initial_equity_usd=200.0,
+        )
+        self.assertIsNone(py_rep["error"])
+        script = (
+            "const f = require('./price-forecast-tab.js');"
+            "const p = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+            "const out = f.runCausalReplayWithDaily(p.bars, p.daily, p.settings, { notional_usd: 200, leverage: 2, max_eval_bars: 120, initial_equity_usd: 200 });"
+            "console.log(JSON.stringify(out));"
+        )
+        proc = subprocess.run(
+            ["node", "-e", script],
+            input=json.dumps({"bars": bars, "daily": daily, "settings": cfg}),
+            text=True,
+            capture_output=True,
+            cwd=str(Path(__file__).resolve().parents[1]),
+            check=True,
+        )
+        js_rep = json.loads(proc.stdout.strip())
+        self.assertIsNone(js_rep["error"])
+        self.assertEqual(len(py_rep["entry_signals"]), len(js_rep["entry_signals"]))
+        for py_sig, js_sig in zip(py_rep["entry_signals"], js_rep["entry_signals"]):
+            self.assertEqual(py_sig["time"], js_sig["time"])
+            self.assertEqual(py_sig["side"], js_sig["side"])
+            self.assertEqual(py_sig["entry_allowed"], js_sig["entry_allowed"])
+            self.assertAlmostEqual(py_sig["expected_bps"], js_sig["expected_bps"], places=8)
+            self.assertAlmostEqual(py_sig["confidence_pct"], js_sig["confidence_pct"], places=8)
+        self.assertEqual(len(py_rep["trades"]), len(js_rep["trades"]))
+        for py_t, js_t in zip(py_rep["trades"], js_rep["trades"]):
+            self.assertEqual(py_t["entry_time"], js_t["entry_time"])
+            self.assertEqual(py_t["exit_time"], js_t["exit_time"])
+            self.assertEqual(py_t["reason"], js_t["reason"])
+            self.assertAlmostEqual(py_t["net_pnl_usd"], js_t["net_pnl_usd"], places=8)
+            self.assertAlmostEqual(py_t["roe_pct"], js_t["roe_pct"], places=8)
+        self.assertAlmostEqual(py_rep["summary"]["return_on_initial_pct"], js_rep["summary"]["return_on_initial_pct"], places=8)
+        self.assertAlmostEqual(py_rep["summary"]["max_drawdown_pct"], js_rep["summary"]["max_drawdown_pct"], places=8)
+        self.assertAlmostEqual(py_rep["summary"]["worst_trade_pct"], js_rep["summary"]["worst_trade_pct"], places=8)
+        self.assertEqual(py_rep["latest_evaluation"]["entry_allowed"], js_rep["latest_evaluation"]["entry_allowed"])
+        self.assertAlmostEqual(py_rep["latest_evaluation"]["expected_bps"], js_rep["latest_evaluation"]["expected_bps"], places=8)
+
     def test_daily_filter_causality_and_position_independence(self):
         bars = _synthetic_4h_bars(340)
         d_up = _synthetic_1d_bars_from_4h(bars, bias="up")

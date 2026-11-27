@@ -146,4 +146,31 @@ assert.match(index, /activateEngineWhenReady\(\(\) => window\.priceForecastTab, 
 assert.match(index, /window\.priceForecastTab\.onTabDeactivated\(\)/,
   "navigation away must stop forecast polling");
 
-console.log("Causal price forecast tab tests passed");
+// 1350 completed 4h bars + 180 1d bars V8 replay benchmark & forming-bar guard
+const bars1350 = [];
+const start4h = 1_680_000_000;
+for (let i = 0; i < 1350; i += 1) {
+  const c = 2000 + i * 0.4 + Math.sin(i / 17) * 45 + Math.cos(i / 5) * 9;
+  const o = c - Math.sin(i / 4) * 3;
+  bars1350.push({ time: start4h + i * 14400, close_time: start4h + (i + 1) * 14400, open: o, high: Math.max(o, c) + 6, low: Math.min(o, c) - 6, close: c, volume: 400 + (i % 20), completed: true });
+}
+bars1350.push({ time: start4h + 1350 * 14400, close_time: start4h + 1351 * 14400, open: 3000, high: 9999, low: 1, close: 9999, volume: 1, completed: false });
+const daily180 = [];
+const firstDay = Math.floor(bars1350[0].time / 86400) * 86400;
+for (let d = 0; d < 250; d += 1) {
+  const c = 1900 + d * 2.5 + Math.sin(d / 6) * 80;
+  daily180.push({ time: firstDay + d * 86400, close_time: firstDay + (d + 1) * 86400, open: c - 4, high: c + 10, low: c - 10, close: c, volume: 2000, completed: true });
+}
+daily180.push({ time: firstDay + 250 * 86400, close_time: firstDay + 251 * 86400, open: 10, high: 10, low: 10, close: 10, volume: 1, completed: false });
+
+const tReplayStart = Date.now();
+const rep1 = forecast.runCausalReplayWithDaily(bars1350, daily180, { ...forecast.DEFAULT_SETTINGS, confidence_pct: 45 }, { max_eval_bars: 360, notional_usd: 200, leverage: 1 });
+const replayMs = Date.now() - tReplayStart;
+const rep5 = forecast.runCausalReplayWithDaily(bars1350, daily180, { ...forecast.DEFAULT_SETTINGS, confidence_pct: 45, use_stop_loss: true, stop_loss_pct: 1.5 }, { max_eval_bars: 360, notional_usd: 2000, leverage: 5 });
+assert.equal(rep1.error, null);
+assert.equal(rep1.summary.eval_bars, 360);
+assert.equal(rep1.latest_evaluation.close_time, bars1350[1349].close_time, "forming 4h candle must be excluded from evaluation");
+assert.deepEqual(rep1.entry_signals, rep5.entry_signals, "notional/leverage/stop-loss must never mutate position-independent entry_signals");
+assert.ok(replayMs < 5000, `client V8 replay should be fast (<5000ms), got ${replayMs}ms`);
+
+console.log(`Causal price forecast tab tests passed (V8 360x1000 replay=${replayMs}ms)`);

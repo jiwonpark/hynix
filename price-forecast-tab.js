@@ -714,6 +714,346 @@
     return Array.from(deduped.values()).sort((left, right) => left.time - right.time);
   }
 
+  function entryDirectionAllowed(mode, side) {
+    const parsed = String(mode || "two_way").trim().toLowerCase();
+    return parsed === "two_way" || (parsed === "long_only" && side > 0) || (parsed === "short_only" && side < 0);
+  }
+
+  function alignDailyTrend(bars, dailyBars, maPeriod = 20) {
+    if (!Array.isArray(dailyBars) || !dailyBars.length || !Array.isArray(bars) || !bars.length) {
+      return new Array((bars || []).length).fill(null);
+    }
+    const orderedDaily = [...dailyBars].sort((a, b) => Number(a.time) - Number(b.time));
+    const dCloses = orderedDaily.map((b) => Number(b.close));
+    const dMa = simpleMovingAverage(dCloses, Math.max(2, Math.round(maPeriod || 20)));
+    const aligned = new Array(bars.length).fill(null);
+    let cursor = 0;
+    for (let idx = 0; idx < bars.length; idx += 1) {
+      const barCloseTime = Math.floor(Number(bars[idx].close_time ?? bars[idx].time));
+      while (cursor + 1 < orderedDaily.length && Math.floor(Number(orderedDaily[cursor + 1].close_time ?? orderedDaily[cursor + 1].time)) <= barCloseTime) {
+        cursor += 1;
+      }
+      const dBar = orderedDaily[cursor];
+      const dCloseTime = Math.floor(Number(dBar.close_time ?? dBar.time));
+      const maVal = dMa[cursor];
+      const dClose = Number(dBar.close);
+      if (dCloseTime <= barCloseTime && finite(maVal) && dClose > 0) {
+        const trend = dClose > maVal ? 1 : (dClose < maVal ? -1 : 0);
+        aligned[idx] = {
+          daily_time: Math.floor(Number(dBar.time)),
+          daily_close_time: dCloseTime,
+          daily_close: dClose,
+          daily_ma: Number(maVal),
+          daily_trend: trend,
+        };
+      }
+    }
+    return aligned;
+  }
+
+  function buildDailyMaSeries(bars, dailyBars, maPeriod = 20) {
+    const aligned = alignDailyTrend(bars, dailyBars, maPeriod);
+    const series = [];
+    for (let i = 0; i < bars.length; i += 1) {
+      const ctx = aligned[i];
+      if (ctx && finite(ctx.daily_ma)) {
+        series.push({ time: Number(bars[i].time), value: Number(ctx.daily_ma) });
+      }
+    }
+    return series;
+  }
+
+  function runCausalReplayWithDaily(barsInput, dailyBarsInput, rawSettings = {}, replayOpts = {}) {
+    const settings = normalizeSettings(rawSettings);
+    const enabledGroups = FEATURE_GROUPS.filter((g) => settings[`use_${g}`]);
+    if (!enabledGroups.length) {
+      return { success: false, error: "Enable at least one model input group.", settings, entry_signals: [], entry_trend: [], trades: [], markers: [] };
+    }
+    const bars = (barsInput || []).filter((b) => b && b.completed !== false);
+    const dailyBars = (dailyBarsInput || []).filter((b) => b && b.completed !== false);
+    const minNeeded = settings.min_train_samples + settings.horizon_bars + 60;
+    if (bars.length < minNeeded) {
+      return { success: false, error: `Need at least ${minNeeded} completed ${settings.interval} candles.`, settings, entry_signals: [], entry_trend: [], trades: [], markers: [] };
+    }
+
+    const notionalUsd = Number(replayOpts.notional_usd ?? settings.notional_usd ?? 200);
+    const leverage = Number(replayOpts.leverage ?? settings.leverage ?? 1);
+    const maxEvalBars = Math.max(100, Math.round(Number(replayOpts.max_eval_bars ?? replayOpts.limit ?? 360)));
+    const initialEquityUsd = Number(replayOpts.initial_equity_usd ?? notionalUsd);
+
+    const { indicators, rows } = buildFeatureRows(bars, settings);
+    const samples = makeSamples(bars, rows, settings, indicators);
+    const alignedDaily = alignDailyTrend(bars, dailyBars, settings.daily_ma_period);
+
+    const firstValidIdx = rows.findIndex((r) => r !== null);
+    const firstValid = firstValidIdx < 0 ? 0 : firstValidIdx;
+    let lastValid = -1;
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      if (rows[i] !== null) {
+        lastValid = i;
+        break;
+      }
+    }
+    const earliest = Math.max(firstValid, settings.min_train_samples + settings.horizon_bars, bars.length - maxEvalBars);
+
+    const entrySignals = [];
+    const entryTrend = [];
+    let sampleCursor = 0;
+    const trainWindow = settings.train_window;
+    const dailyOn = Boolean(settings.use_daily_trend_filter);
+    const dirMode = settings.entry_direction_mode;
+    let latestEval = null;
+
+    const evalStep = (srcIdx) => {
+      const row = rows[srcIdx];
+      if (!row) return null;
+      while (sampleCursor < samples.length && samples[sampleCursor].targetIndex <= srcIdx) {
+        sampleCursor += 1;
+      }
+      const start = Math.max(0, sampleCursor - trainWindow);
+      const eligible = samples.slice(start, sampleCursor);
+      const step = forecastStepFromEligible(bars, indicators, row, eligible, settings, srcIdx);
+      if (!step) return null;
+      const dCtx = alignedDaily[srcIdx];
+      const dTrend = dCtx ? Math.round(dCtx.daily_trend) : 0;
+      const rawSide = step.direction === "up" ? 1 : (step.direction === "down" ? -1 : 0);
+      const dailyAllowsLong = dailyOn ? (dCtx !== null && dTrend > 0) : true;
+      const dailyAllowsShort = dailyOn ? (dCtx !== null && dTrend < 0) : true;
+      const sideAllowedByDaily = (rawSide === 1 && dailyAllowsLong) || (rawSide === -1 && dailyAllowsShort);
+      const trendSign = dailyOn ? (dCtx ? dTrend : 0) : 0;
+      const entryAllowed = rawSide !== 0 && Boolean(step.qualified) && sideAllowedByDaily && entryDirectionAllowed(dirMode, rawSide);
+      return { step, dCtx, dTrend, rawSide, dailyAllowsLong, dailyAllowsShort, sideAllowedByDaily, trendSign, entryAllowed };
+    };
+
+    for (let srcIdx = earliest; srcIdx < bars.length; srcIdx += 1) {
+      const res = evalStep(srcIdx);
+      if (!res) continue;
+      const { step, dCtx, dTrend, rawSide, dailyAllowsLong, dailyAllowsShort, sideAllowedByDaily, trendSign, entryAllowed } = res;
+      const bar = bars[srcIdx];
+      const barTime = Math.floor(Number(bar.time));
+      const barCloseTime = Math.floor(Number(bar.close_time ?? bar.time));
+      const barClose = Number(bar.close);
+      entryTrend.push({
+        time: barTime,
+        close_time: barCloseTime,
+        sign: trendSign,
+        daily_close: dCtx ? dCtx.daily_close : null,
+        daily_ma: dCtx ? dCtx.daily_ma : null,
+        daily_time: dCtx ? dCtx.daily_close_time : null,
+      });
+      entrySignals.push({
+        index: srcIdx,
+        time: barTime,
+        close_time: barCloseTime,
+        close: barClose,
+        raw_direction: step.direction,
+        raw_side: rawSide,
+        side: entryAllowed ? rawSide : 0,
+        qualified: Boolean(step.qualified),
+        confidence_pct: Number(step.confidence) * 100.0,
+        expected_bps: Number(step.expected_bps),
+        daily_trend: trendSign,
+        daily_ma: dCtx ? dCtx.daily_ma : null,
+        daily_close: dCtx ? dCtx.daily_close : null,
+        daily_ok: Boolean(sideAllowedByDaily),
+        entry_allowed: Boolean(entryAllowed),
+        train_samples: Number(step.train_samples),
+      });
+      if (srcIdx === lastValid) {
+        latestEval = { res, idx: srcIdx };
+      }
+    }
+
+    const buildLatestEval = (idx, res) => {
+      if (!res) return null;
+      const { step, dCtx, dTrend, rawSide, dailyAllowsLong, dailyAllowsShort, sideAllowedByDaily, entryAllowed } = res;
+      const bar = bars[idx];
+      const confPct = Number(step.confidence) * 100.0;
+      return {
+        strategy: "causal_ridge_daily",
+        symbol: settings.symbol,
+        venue: settings.venue,
+        interval: settings.interval,
+        time: Math.floor(Number(bar.time)),
+        close_time: Math.floor(Number(bar.close_time ?? bar.time)),
+        close: Number(bar.close),
+        ma_fast: indicators.maFast[idx],
+        ma_slow: indicators.maSlow[idx],
+        direction: step.direction,
+        candidate_side: entryAllowed ? rawSide : 0,
+        raw_side: rawSide,
+        expected_bps: Number(step.expected_bps),
+        confidence_pct: confPct,
+        min_confidence_pct: Number(settings.confidence_pct),
+        confidence_pass: confPct >= settings.confidence_pct,
+        band_pass: Math.abs(Number(step.expected_bps)) > settings.neutral_bps || rawSide !== 0,
+        probabilities: step.probabilities,
+        residual_sigma_bps: Number(step.residual_sigma_bps),
+        train_samples: Number(step.train_samples),
+        use_daily_trend_filter: dailyOn,
+        daily_ma_period: settings.daily_ma_period,
+        daily_ready: dCtx !== null,
+        daily_trend: dTrend,
+        daily_close: dCtx ? dCtx.daily_close : null,
+        daily_ma: dCtx ? dCtx.daily_ma : null,
+        daily_close_time: dCtx ? dCtx.daily_close_time : null,
+        daily_allows_long: dailyAllowsLong,
+        daily_allows_short: dailyAllowsShort,
+        side_allowed_by_daily: sideAllowedByDaily,
+        hold_same_direction: Boolean(settings.hold_same_direction),
+        entry_direction_mode: dirMode,
+        entry_allowed: entryAllowed,
+        feature_names: step.feature_names,
+        feature_metrics: step.feature_metrics,
+      };
+    };
+
+    if (latestEval && latestEval.res) {
+      latestEval = buildLatestEval(latestEval.idx, latestEval.res);
+    } else if (lastValid >= 0) {
+      latestEval = buildLatestEval(lastValid, evalStep(lastValid));
+    } else {
+      latestEval = null;
+    }
+
+    const sigByIdx = new Map();
+    entrySignals.forEach((sig) => sigByIdx.set(sig.index, sig));
+    const horizon = settings.horizon_bars;
+    const holdSame = Boolean(settings.hold_same_direction);
+    const feeRate = Number(settings.cost_bps) / 10000.0;
+    const useSl = Boolean(settings.use_stop_loss);
+    const slFrac = Number(settings.stop_loss_pct) / 100.0;
+
+    const trades = [];
+    const markers = [];
+    let openPos = null;
+    let eq = initialEquityUsd;
+    let peak = eq;
+    let maxDd = 0.0;
+    let worstTradePct = 0.0;
+    let wins = 0;
+
+    const recordExit = (exitPx, barTime, reason, hoverPrefix) => {
+      const rawRet = openPos.side * (exitPx / openPos.entry_price - 1.0);
+      const netRet = rawRet - feeRate;
+      const pnlPct = netRet * 100.0;
+      const roePct = netRet * 100.0 * leverage;
+      const pnlUsd = openPos.notional * netRet;
+      const feeUsd = openPos.notional * feeRate;
+      eq = Math.max(0.0, eq + pnlUsd);
+      peak = Math.max(peak, eq);
+      if (peak > 0) maxDd = Math.max(maxDd, ((peak - eq) / peak) * 100.0);
+      worstTradePct = Math.min(worstTradePct, roePct);
+      if (pnlUsd > 0) wins += 1;
+      const pk = openPos.pairKey;
+      const dirStr = openPos.side > 0 ? "long" : "short";
+      trades.push({
+        pairKey: pk, symbol: settings.symbol, side: openPos.side, direction: dirStr,
+        entry_time: openPos.entry_time, exit_time: barTime,
+        entry_price: openPos.entry_price, exit_price: exitPx,
+        qty: openPos.qty, notional: openPos.notional, fee_usd: feeUsd,
+        gross_pnl_usd: openPos.notional * rawRet, net_pnl_usd: pnlUsd,
+        pnl_pct: pnlPct, roe_pct: roePct, reason, source: "virtual", hypothetical: true,
+      });
+      markers.push({
+        time: barTime, source: "virtual", hypothetical: true, is_entry: false, is_exit: true,
+        side: -openPos.side, direction: dirStr, ratio: exitPx, entry_price: openPos.entry_price,
+        exit_price: exitPx, qty: openPos.qty, notional: openPos.notional, pairKey: pk,
+        pnl: pnlUsd, pnl_pct: pnlPct, pnl_authoritative: true,
+        hoverText: `${hoverPrefix} @ $${exitPx.toFixed(2)} · net ${pnlUsd >= 0 ? "+" : ""}${pnlUsd.toFixed(2)} USD (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%)`,
+      });
+      openPos = null;
+    };
+
+    for (let idx = earliest; idx < bars.length; idx += 1) {
+      const bar = bars[idx];
+      const barTime = Math.floor(Number(bar.time));
+      const barClose = Number(bar.close);
+      const barHigh = Number(bar.high);
+      const barLow = Number(bar.low);
+      const sig = sigByIdx.get(idx) || null;
+      const sigSide = sig ? Number(sig.side) : 0;
+
+      if (openPos !== null && useSl) {
+        let hitSl = false;
+        let exitPx = barClose;
+        if (openPos.side > 0 && barLow <= openPos.entry_price * (1.0 - slFrac)) {
+          hitSl = true;
+          exitPx = openPos.entry_price * (1.0 - slFrac);
+        } else if (openPos.side < 0 && barHigh >= openPos.entry_price * (1.0 + slFrac)) {
+          hitSl = true;
+          exitPx = openPos.entry_price * (1.0 + slFrac);
+        }
+        if (hitSl) {
+          recordExit(exitPx, barTime, "stop_loss", "PAPER STOP EXIT");
+        }
+      }
+
+      if (openPos !== null) {
+        const held = idx - openPos.entry_index;
+        if (held >= horizon) {
+          if (holdSame && sigSide === openPos.side) {
+            openPos.renewals += 1;
+          } else {
+            const reason = (sigSide !== 0 && sigSide !== openPos.side) ? "opposite_reversal" : "horizon_exit";
+            recordExit(barClose, barTime, reason, `PAPER EXIT (${reason})`);
+          }
+        }
+      }
+
+      if (openPos === null && sigSide !== 0 && sig !== null) {
+        const pk = `paper:${trades.length + 1}:${barTime}`;
+        const notional = notionalUsd * leverage;
+        const qty = notional / barClose;
+        const dirStr = sigSide > 0 ? "long" : "short";
+        openPos = {
+          pairKey: pk, side: sigSide, entry_index: idx, entry_time: barTime,
+          entry_price: barClose, qty, notional, renewals: 0,
+        };
+        markers.push({
+          time: barTime, source: "virtual", hypothetical: true, is_entry: true, is_exit: false,
+          side: sigSide, direction: dirStr, ratio: barClose, entry_price: barClose,
+          exit_price: null, qty, notional, pairKey: pk, pnl: null, pnl_pct: null,
+          hoverText: `PAPER ${sigSide > 0 ? "LONG" : "SHORT"} @ $${barClose.toFixed(2)} · conf ${sig.confidence_pct.toFixed(1)}% · ${sig.expected_bps >= 0 ? "+" : ""}${sig.expected_bps.toFixed(1)}bp`,
+        });
+      }
+    }
+
+    const totalTrades = trades.length;
+    const netPnlUsd = trades.reduce((acc, t) => acc + t.net_pnl_usd, 0);
+    const totalFeesUsd = trades.reduce((acc, t) => acc + t.fee_usd, 0);
+    return {
+      success: true,
+      error: null,
+      venue: settings.venue,
+      symbol: settings.symbol,
+      interval: settings.interval,
+      settings,
+      latest_evaluation: latestEval,
+      latest_condition_time: latestEval ? latestEval.close_time : null,
+      entry_signals: entrySignals,
+      entry_trend: entryTrend,
+      daily_ma_series: entryTrend.filter((item) => finite(item.daily_ma)).map((item) => ({ time: item.time, value: item.daily_ma })),
+      trades,
+      open_position: openPos,
+      markers,
+      summary: {
+        trades: totalTrades,
+        wins,
+        win_rate_pct: totalTrades ? (wins / totalTrades) * 100.0 : null,
+        net_pnl_usd: netPnlUsd,
+        return_on_initial_pct: initialEquityUsd > 0 ? ((eq - initialEquityUsd) / initialEquityUsd) * 100.0 : 0.0,
+        max_drawdown_pct: maxDd,
+        worst_trade_pct: totalTrades ? worstTradePct : 0.0,
+        total_fees_usd: totalFeesUsd,
+        fee_bps: Number(settings.cost_bps),
+        hold_same_direction: holdSame,
+        use_daily_trend_filter: dailyOn,
+        eval_bars: entrySignals.length,
+      },
+    };
+  }
+
   function getApiPrefix() {
     const p = typeof window !== "undefined" ? window.location.pathname : "";
     return p.startsWith("/skhynix") ? "/skhynix" : "";
@@ -749,6 +1089,7 @@
       this.settings = this.loadSettings();
       this.loadedMarket = null;
       this.bars = [];
+      this.dailyBars = [];
       this.dailyMaSeries = [];
       this.actualMarkers = [];
       this.replayPayload = null;
@@ -1299,6 +1640,12 @@
       this.settings = this.readControls();
       this.saveSettings();
       this.syncFeatureBadges();
+      if (this.bars.length) {
+        if (this.dailyBars.length) {
+          this.dailyMaSeries = buildDailyMaSeries(this.bars, this.dailyBars.filter((b) => b && b.completed !== false), this.settings.daily_ma_period);
+        }
+        this.renderCandlesAndMAs(false);
+      }
       this.refreshReplay({ force: true });
     }
 
@@ -1309,13 +1656,14 @@
       this.syncFeatureBadges();
       const seq = ++this.requestSequence;
       this.loading = true;
-      this.setStatus("Refreshing account telemetry, completed candles & replay…");
+      this.setStatus("Refreshing account telemetry & completed candles…");
       try {
         await Promise.all([
           this.refreshStatus(),
           this.refreshChart({ fit: options.fit !== false }),
-          this.refreshReplay({ force: options.force }),
         ]);
+        if (seq !== this.requestSequence) return;
+        await this.refreshReplay({ force: options.force });
         if (seq !== this.requestSequence) return;
         this.lastLoadedAt = Date.now();
         this.loaded = Boolean(this.bars.length);
@@ -1342,21 +1690,27 @@
 
     async refreshChart(options = {}) {
       const s = this.settings;
+      const chartSeq = (this._chartSeq = (this._chartSeq || 0) + 1);
       try {
         const q = new URLSearchParams({
           venue: s.venue,
           symbol: s.symbol,
           interval: s.interval,
-          limit: "500",
+          limit: "1350",
+          include_daily: "true",
           daily_ma_period: String(s.daily_ma_period),
         });
         const data = await apiGet(`/api/forecast-trader/candles?${q.toString()}`);
+        if (chartSeq !== this._chartSeq) return;
         if (!data.success || !Array.isArray(data.bars) || !data.bars.length) {
           throw new Error(data.error || "No candles returned");
         }
         this.errors.chart = null;
         this.bars = data.bars;
-        this.dailyMaSeries = data.daily_ma_series || [];
+        this.dailyBars = Array.isArray(data.daily_bars) ? data.daily_bars : [];
+        this.dailyMaSeries = this.dailyBars.length
+          ? buildDailyMaSeries(this.bars, this.dailyBars.filter((b) => b && b.completed !== false), s.daily_ma_period)
+          : (data.daily_ma_series || []);
         this.actualMarkers = (data.markers || []).map((m, i) => ({
           ...m,
           markerKey: `actual:${m.pairKey}:${m.is_entry ? "E" : "X"}:${m.time}:${i}`,
@@ -1370,6 +1724,7 @@
         const formingNote = lastBar && lastBar.completed === false ? ` · forming bar closes ${formatKst(lastBar.close_time)}` : "";
         this.setStatus(`${s.symbol} · ${s.interval} · ${completedCount} completed bars · latest completed close ${formatKst(latestCompleted?.close_time)}${formingNote}`);
       } catch (err) {
+        if (chartSeq !== this._chartSeq) return;
         this.errors.chart = err.message;
         this.setStatus(`Chart unavailable: ${err.message}`, true);
       }
@@ -1380,28 +1735,21 @@
       const seq = ++this.replaySequence;
       this.executionChartFrame?.setStatus?.(`Running causal ${s.interval} + 1d MA${s.daily_ma_period} replay…`);
       try {
-        const q = new URLSearchParams({
-          venue: s.venue, symbol: s.symbol, interval: s.interval,
-          horizon_bars: String(s.horizon_bars), neutral_bps: String(s.neutral_bps),
-          confidence_pct: String(s.confidence_pct), ridge_lambda: String(s.ridge_lambda),
-          train_window: String(s.train_window), min_train_samples: String(s.min_train_samples),
-          cost_bps: String(s.cost_bps),
-          use_daily_trend_filter: String(s.use_daily_trend_filter),
-          daily_ma_period: String(s.daily_ma_period),
-          hold_same_direction: String(s.hold_same_direction),
-          entry_direction_mode: String(s.entry_direction_mode),
-          use_stop_loss: String(s.use_stop_loss), stop_loss_pct: String(s.stop_loss_pct),
-          notional_usd: String(s.notional_usd), leverage: String(s.leverage),
-          momentum_lookback: String(s.momentum_lookback),
-          macd_fast: String(s.macd_fast), macd_slow: String(s.macd_slow), macd_signal: String(s.macd_signal),
-          rsi_period: String(s.rsi_period), ma_fast: String(s.ma_fast), ma_slow: String(s.ma_slow),
-          ma_slope_lookback: String(s.ma_slope_lookback), atr_period: String(s.atr_period),
-          limit: "360",
-        });
-        FEATURE_GROUPS.forEach((g) => q.set(`use_${g}`, String(Boolean(s[`use_${g}`]))));
-        const data = await apiGet(`/api/forecast-trader/replay?${q.toString()}`);
+        await new Promise((resolve) => setTimeout(resolve, 0));
         if (seq !== this.replaySequence) return;
-        if (!data.success) throw new Error(data.error || "Replay failed");
+        if (!this.bars.length) {
+          throw new Error(this.errors.chart || "No completed candles available for replay");
+        }
+        const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
+        const data = runCausalReplayWithDaily(this.bars, this.dailyBars, s, {
+          notional_usd: s.notional_usd,
+          leverage: s.leverage,
+          max_eval_bars: 360,
+          initial_equity_usd: s.notional_usd,
+        });
+        const elapsedMs = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0);
+        if (seq !== this.replaySequence) return;
+        if (data.error) throw new Error(data.error);
         this.errors.replay = null;
         this.replayPayload = data;
         this.renderConditions();
@@ -1411,7 +1759,7 @@
         this.rebuildCombinedMarkers();
         this.renderHistoryTable();
         const sum = data.summary || {};
-        this.executionChartFrame?.setStatus?.(`PAPER REPLAY (${s.cost_bps}bp fee basis) · ${sum.trades ?? 0} trades · ${sum.eval_bars ?? 0} completed ${s.interval} bars · latest source ${formatKst(data.latest_condition_time)}`);
+        this.executionChartFrame?.setStatus?.(`PAPER REPLAY (${s.cost_bps}bp fee basis) · ${sum.trades ?? 0} trades · ${sum.eval_bars ?? 0} completed ${s.interval} bars (${elapsedMs}ms) · latest source ${formatKst(data.latest_condition_time)}`);
         this.executionChartFrame?.setSecondaryStatus?.(s.use_daily_trend_filter ? `1d MA${s.daily_ma_period} Filter ACTIVE` : "1d MA Filter OFF");
         window.updateMainTabLoading?.("priceforecast");
       } catch (err) {
@@ -2091,13 +2439,13 @@
 
     startPolling() {
       this.stopPolling();
-      this.pollTimer = setInterval(() => {
+      this.pollTimer = setInterval(async () => {
         if (!this.active) return;
         this.refreshStatus();
         const intervalMs = INTERVAL_SECONDS[this.settings.interval] * 1000;
         if (Date.now() - this.lastLoadedAt >= Math.min(intervalMs, 60000)) {
-          this.refreshChart({ fit: false });
-          this.refreshReplay();
+          await this.refreshChart({ fit: false });
+          if (this.active) await this.refreshReplay();
           this.lastLoadedAt = Date.now();
         }
       }, 15000);
@@ -2136,5 +2484,8 @@
   instance.probabilityFromResiduals = probabilityFromResiduals;
   instance.forecastAtIndex = forecastAtIndex;
   instance.buildCausalForecast = buildCausalForecast;
+  instance.alignDailyTrend = alignDailyTrend;
+  instance.buildDailyMaSeries = buildDailyMaSeries;
+  instance.runCausalReplayWithDaily = runCausalReplayWithDaily;
   return instance;
 });

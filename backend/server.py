@@ -2278,39 +2278,52 @@ async def get_forecast_trader_candles(
     venue: str = "binance_futures",
     symbol: str = "ETHUSDT",
     interval: str = "4h",
-    limit: int = 500,
+    limit: int = 1350,
     include_markers: bool = True,
+    include_daily: bool = True,
     daily_ma_period: int = 20,
 ) -> Dict[str, Any]:
-    """Completed + forming chart candles, stepped 1d MA overlay, and actual paired fill markers."""
+    """Completed + forming chart candles, completed 1d bars/MA20 overlay, and actual paired fill markers."""
     try:
         venue_norm = "lighter" if str(venue).lower() == "lighter" else "binance_futures"
         interval_norm = interval if interval in {"5m", "15m", "1h", "4h"} else "4h"
         interval_sec = FORECAST_INTERVAL_SECONDS[interval_norm]
         sym = forecast_canonical_symbol(venue_norm, symbol)
-        capped = max(60, min(1000, int(limit)))
+        capped = max(60, min(1500, int(limit)))
 
         now_sec = time.time()
         if venue_norm == "lighter":
             market_id = FORECAST_LIGHTER_MARKETS[forecast_lighter_symbol(sym)]
-            raw_main = await lighter_client.candles(market_id, interval_norm, min(500, capped), fresh=False)
-            raw_daily = await lighter_client.candles(market_id, "1d", 120, fresh=False)
-            bars = []
+            raw_main: List[Dict[str, Any]] = []
+            end_ms: Optional[int] = None
+            pages = 3 if capped > 1000 else (2 if capped > 500 else 1)
+            for _ in range(pages):
+                chunk = await lighter_client.candles(market_id, interval_norm, min(500, capped), end_timestamp=end_ms, fresh=False)
+                if not chunk:
+                    break
+                raw_main = chunk + raw_main
+                first_t = int(chunk[0]["t"])
+                end_ms = (first_t if first_t > 10_000_000_000 else first_t * 1000) - 1
+            raw_daily = await lighter_client.candles(market_id, "1d", 180, fresh=False) if include_daily else []
+            by_time: Dict[int, Dict[str, Any]] = {}
             for row in raw_main or []:
                 t_raw = int(row["t"])
                 t_open = t_raw // 1000 if t_raw > 10_000_000_000 else t_raw
-                bars.append({
+                by_time[t_open] = {
                     "time": t_open, "close_time": t_open + interval_sec,
                     "open": float(row["o"]), "high": float(row["h"]), "low": float(row["l"]), "close": float(row["c"]),
                     "value": float(row["c"]), "volume": float(row.get("v", 0) or 0),
                     "completed": (t_open + interval_sec) <= now_sec,
-                })
-            d_bars = parse_lighter_candles(raw_daily, "1d", now_sec)
+                }
+            bars = [by_time[k] for k in sorted(by_time)][-capped:]
+            d_bars = parse_lighter_candles(raw_daily, "1d", now_sec) if include_daily else []
         else:
-            raw_main, raw_daily = await asyncio.gather(
-                get_klines(sym, interval=interval_norm, limit=capped),
-                get_klines(sym, interval="1d", limit=120),
-            )
+            coros = [get_klines(sym, interval=interval_norm, limit=capped)]
+            if include_daily:
+                coros.append(get_klines(sym, interval="1d", limit=180))
+            res_list = await asyncio.gather(*coros)
+            raw_main = res_list[0]
+            raw_daily = res_list[1] if include_daily else []
             bars = [
                 {
                     "time": int(r[0]) // 1000,
@@ -2321,12 +2334,12 @@ async def get_forecast_trader_candles(
                 }
                 for r in (raw_main or [])
             ]
-            d_bars = parse_binance_klines(raw_daily, "1d", now_sec)
+            d_bars = parse_binance_klines(raw_daily, "1d", now_sec) if include_daily else []
 
         bars.sort(key=lambda b: b["time"])
         d_bars.sort(key=lambda b: b["time"])
         d_closes = [b["close"] for b in d_bars]
-        d_ma = simple_moving_average(d_closes, max(2, min(200, int(daily_ma_period))))
+        d_ma = simple_moving_average(d_closes, max(2, min(200, int(daily_ma_period)))) if d_bars else []
         daily_ma_series = []
         if bars and d_bars:
             d_ptr = 0
@@ -2385,12 +2398,13 @@ async def get_forecast_trader_candles(
             "symbol": sym,
             "interval": interval_norm,
             "bars": bars,
+            "daily_bars": d_bars,
             "daily_ma_series": daily_ma_series,
             "markers": markers,
         }
     except Exception as exc:
         logger.exception("Error building /api/forecast-trader/candles")
-        return {"success": False, "bars": [], "daily_ma_series": [], "markers": [], "error": str(exc)}
+        return {"success": False, "bars": [], "daily_bars": [], "daily_ma_series": [], "markers": [], "error": str(exc)}
 
 
 @app.get("/api/forecast-trader/replay")
@@ -2427,7 +2441,7 @@ async def get_forecast_trader_replay(
     use_volatility: bool = True,
     notional_usd: float = 200.0,
     leverage: float = 1.0,
-    limit: int = 360,
+    limit: int = 120,
 ) -> Dict[str, Any]:
     """Causal paper replay returning position-independent entry_signals, entry_trend, and paired paper trades."""
     try:
@@ -2479,7 +2493,7 @@ async def get_forecast_trader_replay(
             params,
             notional_usd=float(notional_usd),
             leverage=float(leverage),
-            max_eval_bars=max(120, min(600, int(limit))),
+            max_eval_bars=max(40, min(120, int(limit))),
             initial_equity_usd=float(notional_usd),
         )
         payload = {"success": result.get("error") is None, "venue": venue_norm, "symbol": sym, "interval": interval_norm, **result}
