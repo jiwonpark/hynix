@@ -7,11 +7,11 @@ delete require.cache[require.resolve(modulePath)];
 const forecast = require(modulePath);
 
 assert.equal(forecast.DEFAULT_SETTINGS.symbol, "ETHUSDT");
-assert.equal(forecast.DEFAULT_SETTINGS.confidence_pct, 52);
-assert.equal(forecast.DEFAULT_SETTINGS.daily_ma_period, 100);
-assert.equal(forecast.DEFAULT_SETTINGS.entry_direction_mode, "long_only");
+assert.equal(forecast.DEFAULT_SETTINGS.confidence_pct, 49);
+assert.equal(forecast.DEFAULT_SETTINGS.daily_ma_period, 20);
+assert.equal(forecast.DEFAULT_SETTINGS.entry_direction_mode, "two_way");
 assert.equal(forecast.DEFAULT_SETTINGS.horizon_bars, 1);
-assert.equal(forecast.DEFAULT_SETTINGS.min_hold_bars, 3);
+assert.equal(forecast.DEFAULT_SETTINGS.min_hold_bars, 1);
 
 function syntheticBars(count = 900) {
   const start = 1_700_000_000;
@@ -218,8 +218,9 @@ const confidenceOff = forecast.runCausalReplayWithDaily(bars1350, daily180, {
 }, { max_eval_bars: 120 });
 assert.ok(confidenceOff.entry_signals.some((signal) => signal.entry_allowed),
   "disabling the confidence gate must affect replay instead of leaving a decorative switch");
-assert.match(source, /id="pfBtnValidatedPreset"/);
-assert.match(source, /min_hold_bars:\s*3/,
-  "validated ETH preset must keep one-bar prediction separate from three-bar minimum hold");
+assert.doesNotMatch(source, /pfBtnValidatedPreset|applyValidatedEthPreset|ETH Research Preset/,
+  "the rejected three-year ETH preset must not remain promoted in the trading UI");
+assert.match(source, /No Tab 11 setup currently passes the five-year robustness gate/,
+  "the UI must disclose that current Tab 11 configurations are exploratory");
 
 console.log(`Causal price forecast tab tests passed (V8 360x1000 replay=${replayMs}ms)`);

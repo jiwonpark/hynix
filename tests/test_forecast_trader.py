@@ -297,10 +297,10 @@ class ForecastTraderTests(unittest.TestCase):
         self.assertTrue(all(not sig["entry_allowed"] and not sig["edge_pass"] for sig in edge_blocked["entry_signals"]))
 
     def test_research_defaults_do_not_silently_migrate_persisted_live_state(self):
-        self.assertEqual(causal_ridge.DEFAULT_SETTINGS["confidence_pct"], 52.0)
-        self.assertEqual(causal_ridge.DEFAULT_SETTINGS["daily_ma_period"], 100)
-        self.assertEqual(causal_ridge.DEFAULT_SETTINGS["entry_direction_mode"], "long_only")
-        self.assertEqual(causal_ridge.DEFAULT_SETTINGS["min_hold_bars"], 3)
+        self.assertEqual(causal_ridge.DEFAULT_SETTINGS["confidence_pct"], 49.0)
+        self.assertEqual(causal_ridge.DEFAULT_SETTINGS["daily_ma_period"], 20)
+        self.assertEqual(causal_ridge.DEFAULT_SETTINGS["entry_direction_mode"], "two_way")
+        self.assertEqual(causal_ridge.DEFAULT_SETTINGS["min_hold_bars"], 1)
         with tempfile.TemporaryDirectory() as tmpdir:
             state_file = Path(tmpdir) / "state.json"
             state_file.write_text(json.dumps({

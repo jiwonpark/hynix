@@ -78,7 +78,7 @@ condition candle's price.
 Regression coverage for every new replay strategy must demonstrate that a second
 qualifying candle is still returned while the simulated position remains open.
 
-## Tab 11 execution-realistic replay and ETH research preset
+## Tab 11 execution-realistic replay and robustness disclosure
 
 Tab 11 evaluates Ridge entry conditions on completed candles but simulates fills
 at the next candle open. Signal arrows remain on the completed source candle;
@@ -94,13 +94,14 @@ same-direction signals may extend the hold when the independent Hold Streaks
 switch is enabled. Neither setting may suppress the position-independent
 `entry_signals` stream.
 
-The **ETH Research Preset** is the fresh Tab 11 paper default and an explicit
-reload button, not an automatic live migration: ETHUSDT 4h, one-bar forecast, three-bar minimum hold, confidence gate
-52%, completed daily MA100 long-only regime, 10 bp modeled round-trip cost, 1x,
-and no stop. Loading it never changes the saved bot or arms execution. Authenticated
-Save Strategy is required, and deployment alone must preserve legacy saved values.
-Do not label the preset validated for BTC or as guaranteed profitable. Preserve
-the dated validation evidence in `docs/tab11-eth-validation-2026-11-27.md`.
+The former **ETH Research Preset** (ETHUSDT 4h, confidence 52%, completed daily
+MA100, long-only, three-bar hold) was rejected after expanded five-year testing.
+Do not expose it as a preset or default, and do not describe any current Tab 11
+configuration as validated or profitable. The header must retain a concise
+robustness disclosure while the live controls remain real and operator-controlled.
+Changing code or defaults must never migrate saved bot values or arm execution.
+Preserve the dated correction evidence in
+`docs/tab11-eth-validation-2026-11-27.md`.
 
 
 # Account, chart, and time verification

@@ -14,9 +14,9 @@
     symbol: "ETHUSDT",
     interval: "4h",
     horizon_bars: 1,
-    min_hold_bars: 3,
+    min_hold_bars: 1,
     neutral_bps: 8,
-    confidence_pct: 52,
+    confidence_pct: 49,
     use_confidence_gate: true,
     use_expected_edge_gate: false,
     min_expected_bps: 8,
@@ -25,9 +25,9 @@
     min_train_samples: 180,
     cost_bps: 10,
     use_daily_trend_filter: true,
-    daily_ma_period: 100,
+    daily_ma_period: 20,
     hold_same_direction: true,
-    entry_direction_mode: "long_only",
+    entry_direction_mode: "two_way",
     use_stop_loss: false,
     stop_loss_pct: 3.0,
     notional_usd: 200,
@@ -1263,11 +1263,10 @@
                 <span id="pfLiveBadge" class="pfState off">SYNCING…</span>
                 <span id="pfVenuePill" style="background:#e0f2fe;color:#0369a1;border-radius:999px;padding:2px 8px;font-size:9.5px;font-weight:900;">BINANCE FUTURES</span>
               </div>
-              <small id="pfHeaderSub" style="color:#64748b;display:block;margin-top:2px;">Completed-close signals · next-open paper fills · authenticated live execution uses current quotes</small>
+              <small id="pfHeaderSub" style="color:#92400e;display:block;margin-top:2px;">No Tab 11 setup currently passes the five-year robustness gate · paper results are exploratory</small>
             </div>
             <div class="pfActions">
               <button id="pfBtnUnlock" class="pfBtn primary" type="button" style="display:none;">🔒 Unlock Live Controls</button>
-              <button id="pfBtnValidatedPreset" class="pfBtn" type="button" title="Loads the researched ETH configuration into the paper controls; saving live still requires unlock">ETH Research Preset</button>
               <button id="pfBtnToggleLive" class="pfBtn arm terminal-action-control" type="button">▶ Start Live Bot</button>
               <button id="pfBtnSaveConfig" class="pfBtn primary terminal-action-control" type="button">💾 Save Strategy &amp; Size</button>
               <button id="pfBtnReconcile" class="pfBtn terminal-action-control" type="button">⚖ Reconcile</button>
@@ -1633,7 +1632,6 @@
         this.renderNativeSignalArrows();
       });
       document.getElementById("pfRefresh")?.addEventListener("click", () => this.refreshAll({ fit: false, force: true }));
-      document.getElementById("pfBtnValidatedPreset")?.addEventListener("click", () => this.applyValidatedEthPreset());
       document.getElementById("pfBtnUnlock")?.addEventListener("click", () => window.terminalLockManager?.openPasswordModal?.());
       document.getElementById("pfBtnSaveConfig")?.addEventListener("click", () => this.saveConfigToBot());
       document.getElementById("pfBtnToggleLive")?.addEventListener("click", () => this.toggleLiveBot());
@@ -1684,50 +1682,6 @@
         atr_period: val("pfAtrPeriod", this.settings.atr_period),
         ...Object.fromEntries(FEATURE_GROUPS.map((g) => [`use_${g}`, chk(`pfUse_${g}`, this.settings[`use_${g}`])])),
       });
-    }
-
-    applyValidatedEthPreset() {
-      const preset = normalizeSettings({
-        ...this.readControls(),
-        venue: "binance_futures",
-        symbol: "ETHUSDT",
-        interval: "4h",
-        horizon_bars: 1,
-        min_hold_bars: 3,
-        use_confidence_gate: true,
-        confidence_pct: 52,
-        use_expected_edge_gate: false,
-        use_daily_trend_filter: true,
-        daily_ma_period: 100,
-        hold_same_direction: true,
-        entry_direction_mode: "long_only",
-        use_stop_loss: false,
-        cost_bps: 10,
-        leverage: 1,
-      });
-      const values = {
-        pfVenue: preset.venue, pfSymbol: preset.symbol, pfInterval: preset.interval,
-        pfHorizon: preset.horizon_bars, pfMinHoldBars: preset.min_hold_bars,
-        pfConfidence: preset.confidence_pct, pfDailyMaPeriod: preset.daily_ma_period,
-        pfDirectionMode: preset.entry_direction_mode, pfCostBps: preset.cost_bps,
-        pfLeverage: preset.leverage,
-      };
-      Object.entries(values).forEach(([id, value]) => {
-        const el = document.getElementById(id);
-        if (el) el.value = String(value);
-      });
-      const checks = {
-        pfUseConfidenceGate: true, pfUseExpectedEdgeGate: false,
-        pfUseDailyFilter: true, pfHoldSameDirection: true, pfUseStopLoss: false,
-      };
-      Object.entries(checks).forEach(([id, checked]) => {
-        const el = document.getElementById(id);
-        if (el) el.checked = checked;
-      });
-      this.settings = preset;
-      this.saveSettings();
-      window.showToast?.("ETH preset loaded for paper replay. Unlock and Save Strategy to change the paused live bot.", "success");
-      this.onVenueOrSymbolChanged();
     }
 
     syncFeatureBadges() {
