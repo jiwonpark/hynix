@@ -5,7 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const STORAGE_KEY = "skhynix_price_forecast_settings_v3";
+  const STORAGE_KEY = "skhynix_price_forecast_settings_v4";
   const INTERVAL_SECONDS = { "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
   const FEATURE_GROUPS = ["momentum", "macd", "rsi", "ma", "volatility"];
 
@@ -14,16 +14,20 @@
     symbol: "ETHUSDT",
     interval: "4h",
     horizon_bars: 1,
+    min_hold_bars: 3,
     neutral_bps: 8,
-    confidence_pct: 49,
+    confidence_pct: 52,
+    use_confidence_gate: true,
+    use_expected_edge_gate: false,
+    min_expected_bps: 8,
     ridge_lambda: 400,
     train_window: 1000,
     min_train_samples: 180,
     cost_bps: 10,
     use_daily_trend_filter: true,
-    daily_ma_period: 20,
+    daily_ma_period: 100,
     hold_same_direction: true,
-    entry_direction_mode: "two_way",
+    entry_direction_mode: "long_only",
     use_stop_loss: false,
     stop_loss_pct: 3.0,
     notional_usd: 200,
@@ -565,8 +569,12 @@
       symbol: cleanSym,
       interval,
       horizon_bars: Math.round(clamp(merged.horizon_bars, 1, 12)),
+      min_hold_bars: Math.round(clamp(merged.min_hold_bars ?? 1, 1, 24)),
       neutral_bps: clamp(merged.neutral_bps, 0, 500),
       confidence_pct: clamp(merged.confidence_pct, 0, 100),
+      use_confidence_gate: merged.use_confidence_gate !== false,
+      use_expected_edge_gate: Boolean(merged.use_expected_edge_gate),
+      min_expected_bps: clamp(merged.min_expected_bps ?? 8, 0, 500),
       ridge_lambda: clamp(merged.ridge_lambda, 0.0001, 10000),
       train_window: Math.round(clamp(merged.train_window, 100, 1200)),
       min_train_samples: Math.round(clamp(merged.min_train_samples, 60, 1000)),
@@ -821,14 +829,16 @@
       const dailyAllowsShort = dailyOn ? (dCtx !== null && dTrend < 0) : true;
       const sideAllowedByDaily = (rawSide === 1 && dailyAllowsLong) || (rawSide === -1 && dailyAllowsShort);
       const trendSign = dailyOn ? (dCtx ? dTrend : 0) : 0;
-      const entryAllowed = rawSide !== 0 && Boolean(step.qualified) && sideAllowedByDaily && entryDirectionAllowed(dirMode, rawSide);
-      return { step, dCtx, dTrend, rawSide, dailyAllowsLong, dailyAllowsShort, sideAllowedByDaily, trendSign, entryAllowed };
+      const confidencePass = !settings.use_confidence_gate || Number(step.confidence) * 100 >= settings.confidence_pct;
+      const edgePass = !settings.use_expected_edge_gate || Math.abs(Number(step.expected_bps)) >= settings.min_expected_bps;
+      const entryAllowed = rawSide !== 0 && confidencePass && edgePass && sideAllowedByDaily && entryDirectionAllowed(dirMode, rawSide);
+      return { step, dCtx, dTrend, rawSide, dailyAllowsLong, dailyAllowsShort, sideAllowedByDaily, trendSign, confidencePass, edgePass, entryAllowed };
     };
 
     for (let srcIdx = earliest; srcIdx < bars.length; srcIdx += 1) {
       const res = evalStep(srcIdx);
       if (!res) continue;
-      const { step, dCtx, dTrend, rawSide, dailyAllowsLong, dailyAllowsShort, sideAllowedByDaily, trendSign, entryAllowed } = res;
+      const { step, dCtx, dTrend, rawSide, dailyAllowsLong, dailyAllowsShort, sideAllowedByDaily, trendSign, confidencePass, edgePass, entryAllowed } = res;
       const bar = bars[srcIdx];
       const barTime = Math.floor(Number(bar.time));
       const barCloseTime = Math.floor(Number(bar.close_time ?? bar.time));
@@ -849,7 +859,9 @@
         raw_direction: step.direction,
         raw_side: rawSide,
         side: entryAllowed ? rawSide : 0,
-        qualified: Boolean(step.qualified),
+        qualified: Boolean(confidencePass),
+        confidence_pass: Boolean(confidencePass),
+        edge_pass: Boolean(edgePass),
         confidence_pct: Number(step.confidence) * 100.0,
         expected_bps: Number(step.expected_bps),
         daily_trend: trendSign,
@@ -866,7 +878,7 @@
 
     const buildLatestEval = (idx, res) => {
       if (!res) return null;
-      const { step, dCtx, dTrend, rawSide, dailyAllowsLong, dailyAllowsShort, sideAllowedByDaily, entryAllowed } = res;
+      const { step, dCtx, dTrend, rawSide, dailyAllowsLong, dailyAllowsShort, sideAllowedByDaily, confidencePass, edgePass, entryAllowed } = res;
       const bar = bars[idx];
       const confPct = Number(step.confidence) * 100.0;
       return {
@@ -884,9 +896,12 @@
         raw_side: rawSide,
         expected_bps: Number(step.expected_bps),
         confidence_pct: confPct,
+        use_confidence_gate: Boolean(settings.use_confidence_gate),
         min_confidence_pct: Number(settings.confidence_pct),
-        confidence_pass: confPct >= settings.confidence_pct,
-        band_pass: Math.abs(Number(step.expected_bps)) > settings.neutral_bps || rawSide !== 0,
+        confidence_pass: Boolean(confidencePass),
+        use_expected_edge_gate: Boolean(settings.use_expected_edge_gate),
+        min_expected_bps: Number(settings.min_expected_bps),
+        edge_pass: Boolean(edgePass),
         probabilities: step.probabilities,
         residual_sigma_bps: Number(step.residual_sigma_bps),
         train_samples: Number(step.train_samples),
@@ -901,6 +916,7 @@
         daily_allows_short: dailyAllowsShort,
         side_allowed_by_daily: sideAllowedByDaily,
         hold_same_direction: Boolean(settings.hold_same_direction),
+        min_hold_bars: Number(settings.min_hold_bars),
         entry_direction_mode: dirMode,
         entry_allowed: entryAllowed,
         feature_names: step.feature_names,
@@ -918,7 +934,7 @@
 
     const sigByIdx = new Map();
     entrySignals.forEach((sig) => sigByIdx.set(sig.index, sig));
-    const horizon = settings.horizon_bars;
+    const minHoldBars = settings.min_hold_bars;
     const holdSame = Boolean(settings.hold_same_direction);
     const feeRate = Number(settings.cost_bps) / 10000.0;
     const useSl = Boolean(settings.use_stop_loss);
@@ -927,6 +943,7 @@
     const trades = [];
     const markers = [];
     let openPos = null;
+    let pendingAction = null;
     let eq = initialEquityUsd;
     let peak = eq;
     let maxDd = 0.0;
@@ -934,6 +951,7 @@
     let wins = 0;
 
     const recordExit = (exitPx, barTime, reason, hoverPrefix) => {
+      if (!openPos) return;
       const rawRet = openPos.side * (exitPx / openPos.entry_price - 1.0);
       const netRet = rawRet - feeRate;
       const pnlPct = netRet * 100.0;
@@ -949,6 +967,7 @@
       const dirStr = openPos.side > 0 ? "long" : "short";
       trades.push({
         pairKey: pk, symbol: settings.symbol, side: openPos.side, direction: dirStr,
+        signal_time: openPos.signal_time,
         entry_time: openPos.entry_time, exit_time: barTime,
         entry_price: openPos.entry_price, exit_price: exitPx,
         qty: openPos.qty, notional: openPos.notional, fee_usd: feeUsd,
@@ -965,14 +984,41 @@
       openPos = null;
     };
 
+    const recordEntry = (side, sig, idx, entryPx) => {
+      const barTime = Math.floor(Number(bars[idx].time));
+      const pk = `paper:${trades.length + 1}:${barTime}`;
+      const notional = notionalUsd * leverage;
+      const qty = notional / entryPx;
+      const dirStr = side > 0 ? "long" : "short";
+      openPos = {
+        pairKey: pk, side, entry_index: idx, entry_time: barTime,
+        signal_time: Number(sig.time), entry_price: entryPx, qty, notional, renewals: 0,
+      };
+      markers.push({
+        time: barTime, source: "virtual", hypothetical: true, is_entry: true, is_exit: false,
+        side, direction: dirStr, ratio: entryPx, entry_price: entryPx,
+        exit_price: null, qty, notional, pairKey: pk, pnl: null, pnl_pct: null,
+        hoverText: `PAPER ${side > 0 ? "LONG" : "SHORT"} NEXT-OPEN @ $${entryPx.toFixed(2)} · signal ${sig.confidence_pct.toFixed(1)}% · ${sig.expected_bps >= 0 ? "+" : ""}${sig.expected_bps.toFixed(1)}bp`,
+      });
+    };
+
     for (let idx = earliest; idx < bars.length; idx += 1) {
       const bar = bars[idx];
       const barTime = Math.floor(Number(bar.time));
+      const barOpen = Number(bar.open);
       const barClose = Number(bar.close);
       const barHigh = Number(bar.high);
       const barLow = Number(bar.low);
-      const sig = sigByIdx.get(idx) || null;
-      const sigSide = sig ? Number(sig.side) : 0;
+      if (pendingAction) {
+        const action = pendingAction;
+        pendingAction = null;
+        if (["exit", "reverse"].includes(action.kind)) {
+          recordExit(barOpen, barTime, action.reason, `PAPER NEXT-OPEN EXIT (${action.reason})`);
+        }
+        if (["entry", "reverse"].includes(action.kind) && action.side) {
+          recordEntry(Number(action.side), action.signal, idx, barOpen);
+        }
+      }
 
       if (openPos !== null && useSl) {
         let hitSl = false;
@@ -989,33 +1035,35 @@
         }
       }
 
+      if (openPos !== null && peak > 0) {
+        const adversePx = openPos.side > 0 ? barLow : barHigh;
+        const adverseRet = openPos.side * (adversePx / openPos.entry_price - 1.0) - feeRate;
+        const adverseEq = Math.max(0, eq + openPos.notional * adverseRet);
+        maxDd = Math.max(maxDd, ((peak - adverseEq) / peak) * 100.0);
+        const closeRet = openPos.side * (barClose / openPos.entry_price - 1.0) - feeRate;
+        peak = Math.max(peak, eq + openPos.notional * closeRet);
+      }
+
+      const sig = sigByIdx.get(idx) || null;
+      const sigSide = sig ? Number(sig.side) : 0;
+      if (idx + 1 >= bars.length) continue;
       if (openPos !== null) {
-        const held = idx - openPos.entry_index;
-        if (held >= horizon) {
+        const held = idx - openPos.entry_index + 1;
+        if (held >= minHoldBars) {
           if (holdSame && sigSide === openPos.side) {
             openPos.renewals += 1;
           } else {
-            const reason = (sigSide !== 0 && sigSide !== openPos.side) ? "opposite_reversal" : "horizon_exit";
-            recordExit(barClose, barTime, reason, `PAPER EXIT (${reason})`);
+            const reversing = Boolean(sig && sigSide !== 0 && sigSide !== openPos.side);
+            pendingAction = {
+              kind: reversing ? "reverse" : "exit",
+              side: reversing ? sigSide : 0,
+              signal: sig,
+              reason: reversing ? "opposite_signal_reversal" : "horizon_exit",
+            };
           }
         }
-      }
-
-      if (openPos === null && sigSide !== 0 && sig !== null) {
-        const pk = `paper:${trades.length + 1}:${barTime}`;
-        const notional = notionalUsd * leverage;
-        const qty = notional / barClose;
-        const dirStr = sigSide > 0 ? "long" : "short";
-        openPos = {
-          pairKey: pk, side: sigSide, entry_index: idx, entry_time: barTime,
-          entry_price: barClose, qty, notional, renewals: 0,
-        };
-        markers.push({
-          time: barTime, source: "virtual", hypothetical: true, is_entry: true, is_exit: false,
-          side: sigSide, direction: dirStr, ratio: barClose, entry_price: barClose,
-          exit_price: null, qty, notional, pairKey: pk, pnl: null, pnl_pct: null,
-          hoverText: `PAPER ${sigSide > 0 ? "LONG" : "SHORT"} @ $${barClose.toFixed(2)} · conf ${sig.confidence_pct.toFixed(1)}% · ${sig.expected_bps >= 0 ? "+" : ""}${sig.expected_bps.toFixed(1)}bp`,
-        });
+      } else if (sigSide !== 0 && sig !== null) {
+        pendingAction = { kind: "entry", side: sigSide, signal: sig, reason: "signal_entry" };
       }
     }
 
@@ -1047,6 +1095,8 @@
         worst_trade_pct: totalTrades ? worstTradePct : 0.0,
         total_fees_usd: totalFeesUsd,
         fee_bps: Number(settings.cost_bps),
+        fill_model: "next_bar_open",
+        min_hold_bars: minHoldBars,
         hold_same_direction: holdSame,
         use_daily_trend_filter: dailyOn,
         eval_bars: entrySignals.length,
@@ -1205,18 +1255,19 @@
           }
         </style>
 
-        <section class="pfPanel" aria-label="4h Causal Ridge + 1d MA20 Trading Controls">
+        <section class="pfPanel" aria-label="Causal Ridge and completed daily trend trading controls">
           <div class="pfHeaderRow">
             <div>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                <strong style="font-size:16px;color:#0f172a;">4h Quant Trader (Causal Ridge + 1d MA20)</strong>
+                <strong style="font-size:16px;color:#0f172a;">4h Quant Trader (Causal Ridge + Daily Trend)</strong>
                 <span id="pfLiveBadge" class="pfState off">SYNCING…</span>
                 <span id="pfVenuePill" style="background:#e0f2fe;color:#0369a1;border-radius:999px;padding:2px 8px;font-size:9.5px;font-weight:900;">BINANCE FUTURES</span>
               </div>
-              <small id="pfHeaderSub" style="color:#64748b;display:block;margin-top:2px;">Evaluates newly completed 4h candles gated by completed 1d Close vs MA20 · Zero-drift Python live &amp; replay engine</small>
+              <small id="pfHeaderSub" style="color:#64748b;display:block;margin-top:2px;">Completed-close signals · next-open paper fills · authenticated live execution uses current quotes</small>
             </div>
             <div class="pfActions">
               <button id="pfBtnUnlock" class="pfBtn primary" type="button" style="display:none;">🔒 Unlock Live Controls</button>
+              <button id="pfBtnValidatedPreset" class="pfBtn" type="button" title="Loads the researched ETH configuration into the paper controls; saving live still requires unlock">ETH Research Preset</button>
               <button id="pfBtnToggleLive" class="pfBtn arm terminal-action-control" type="button">▶ Start Live Bot</button>
               <button id="pfBtnSaveConfig" class="pfBtn primary terminal-action-control" type="button">💾 Save Strategy &amp; Size</button>
               <button id="pfBtnReconcile" class="pfBtn terminal-action-control" type="button">⚖ Reconcile</button>
@@ -1284,7 +1335,7 @@
             </div>
             <div class="pfField"><label for="pfNotional">Notional ($)</label><input id="pfNotional" type="number" min="10" max="5000" step="10" value="${s.notional_usd}" style="width:76px;"></div>
             <div class="pfField"><label for="pfLeverage">Lev (x)</label><input id="pfLeverage" type="number" min="1" max="10" step="0.5" value="${s.leverage}" style="width:58px;"></div>
-            <div class="pfField"><label for="pfConfidence">Min Conf %</label><input id="pfConfidence" type="number" min="0" max="100" step="1" value="${s.confidence_pct}" style="width:68px;"></div>
+            <div class="pfField"><label for="pfConfidence"><input id="pfUseConfidenceGate" class="pfToggle" type="checkbox"${s.use_confidence_gate ? " checked" : ""}> Min Conf %</label><input id="pfConfidence" type="number" min="0" max="100" step="1" value="${s.confidence_pct}" style="width:68px;"></div>
             <div class="pfField">
               <label for="pfUseDailyFilter"><input id="pfUseDailyFilter" class="pfToggle" type="checkbox"${s.use_daily_trend_filter ? " checked" : ""}> 1d MA</label>
               <input id="pfDailyMaPeriod" type="number" min="2" max="200" step="1" value="${s.daily_ma_period}" style="width:64px;">
@@ -1301,14 +1352,16 @@
                 <option value="short_only"${s.entry_direction_mode === "short_only" ? " selected" : ""}>Short Only</option>
               </select>
             </div>
-            <div class="pfField"><label for="pfNeutralBps">Band ±bp</label><input id="pfNeutralBps" type="number" min="0" max="500" step="1" value="${s.neutral_bps}" style="width:64px;"></div>
+            <div class="pfField"><label for="pfNeutralBps">Class Band ±bp</label><input id="pfNeutralBps" type="number" min="0" max="500" step="1" value="${s.neutral_bps}" style="width:64px;"></div>
+            <div class="pfField"><label for="pfMinExpectedBps"><input id="pfUseExpectedEdgeGate" class="pfToggle" type="checkbox"${s.use_expected_edge_gate ? " checked" : ""}> Min Edge bp</label><input id="pfMinExpectedBps" type="number" min="0" max="500" step="1" value="${s.min_expected_bps}" style="width:64px;"></div>
             <div class="pfField"><label for="pfLambda">Ridge λ</label><input id="pfLambda" type="number" min="0.0001" max="10000" step="10" value="${s.ridge_lambda}" style="width:68px;"></div>
             <div class="pfField"><label for="pfCostBps">Fee bp</label><input id="pfCostBps" type="number" min="0" max="500" step="1" value="${s.cost_bps}" style="width:56px;"></div>
             <div class="pfField">
               <label for="pfUseStopLoss"><input id="pfUseStopLoss" class="pfToggle" type="checkbox"${s.use_stop_loss ? " checked" : ""}> Stop %</label>
               <input id="pfStopLossPct" type="number" min="0.1" max="50" step="0.5" value="${s.stop_loss_pct}" style="width:58px;">
             </div>
-            <div class="pfField"><label for="pfHorizon">Horizon</label><input id="pfHorizon" type="number" min="1" max="12" step="1" value="${s.horizon_bars}" style="width:56px;"></div>
+            <div class="pfField"><label for="pfHorizon">Forecast Bars</label><input id="pfHorizon" type="number" min="1" max="12" step="1" value="${s.horizon_bars}" style="width:56px;"></div>
+            <div class="pfField"><label for="pfMinHoldBars">Min Hold Bars</label><input id="pfMinHoldBars" type="number" min="1" max="24" step="1" value="${s.min_hold_bars}" style="width:56px;"></div>
           </div>
           <div style="display:flex;gap:12px;margin-top:7px;font-size:10px;color:#475569;flex-wrap:wrap;align-items:center;">
             <span><strong>Execution Safeguards (Always Active):</strong> Cross-bot collision lock · Account leverage cap ≤ 2.0x · Margin buffer ≥ 125% · Spread ≤ 15 bp · Completed candle freshness</span>
@@ -1337,11 +1390,21 @@
                 <span id="pfCondConfBadge" class="pfState off">WAITING</span>
               </div>
               <div class="pfCondRow">
-                <div><strong>3. Ridge Return Edge</strong><div id="pfCondEdgeDetail" style="color:#64748b;font-size:10px;">|Expected| vs Neutral ±bp</div></div>
+                <div><strong>3. Expected Return Edge</strong><div id="pfCondEdgeDetail" style="color:#64748b;font-size:10px;">Optional |expected| minimum</div></div>
                 <span id="pfCondEdgeBadge" class="pfState off">WAITING</span>
               </div>
+              <div style="font-size:10px;font-weight:900;color:#475569;margin-top:8px;">EXIT CONDITIONS</div>
               <div class="pfCondRow">
-                <div><strong>4. Execution Safeguards</strong><div id="pfCondGuardDetail" style="color:#64748b;font-size:10px;">Collision · Margin · Spread</div></div>
+                <div><strong>Minimum Hold + Signal Streak</strong><div id="pfCondHoldDetail" style="color:#64748b;font-size:10px;">Awaiting paper position</div></div>
+                <span id="pfCondHoldBadge" class="pfState off">N/A</span>
+              </div>
+              <div class="pfCondRow">
+                <div><strong>Intrabar Stop Loss</strong><div id="pfCondStopDetail" style="color:#64748b;font-size:10px;">Optional paper/live exit</div></div>
+                <span id="pfCondStopBadge" class="pfState off">OFF</span>
+              </div>
+              <div style="font-size:10px;font-weight:900;color:#475569;margin-top:8px;">EXECUTION SAFEGUARDS</div>
+              <div class="pfCondRow">
+                <div><strong>Account + Order Safety</strong><div id="pfCondGuardDetail" style="color:#64748b;font-size:10px;">Collision · Margin · Spread</div></div>
                 <span id="pfCondGuardBadge" class="pfState off">CHECKING</span>
               </div>
               <div id="pfEvalSource" class="pfStatusBar">Source: awaiting completed candle.</div>
@@ -1427,7 +1490,7 @@
         this.executionChartFrame = FrameClass.mount({
           container: frameHost,
           id: "pfChartCard",
-          title: "4H CANDLES + 1D MA20 + PAIRED ACTUAL & PAPER TRADES",
+          title: "4H CANDLES + COMPLETED 1D TREND + PAIRED ACTUAL & PAPER TRADES",
           showAssetPane: false,
           height: 450,
           ids: {
@@ -1446,7 +1509,7 @@
           grouping: { asRange: this.groupTradesAsRange, onChange: (asRange) => { this.groupTradesAsRange = asRange; this.renderOverlayMarkers(); } },
           status: "Loading completed candles & paired trades…",
           legendPosition: "top",
-          legend: '<span style="color:#0284c7">— MA20</span><span style="color:#7c3aed">— MA50</span><span style="color:#d97706">┈ 1d MA20 Trend</span><span><strong style="color:#16a34a">▶</strong> Long / Cover</span><span><strong style="color:#dc2626">▶</strong> Short / Sell</span><span style="background:linear-gradient(90deg,rgba(220,38,38,.18),rgba(22,163,74,.18));padding:1px 6px;border-radius:4px;">Shading: 1d MA20 Regime</span>',
+          legend: `<span style="color:#0284c7">— MA${this.settings.ma_fast}</span><span style="color:#7c3aed">— MA${this.settings.ma_slow}</span><span style="color:#d97706">┈ 1d MA${this.settings.daily_ma_period} Trend</span><span><strong style="color:#16a34a">▶</strong> Long / Cover</span><span><strong style="color:#dc2626">▶</strong> Short / Sell</span><span style="background:linear-gradient(90deg,rgba(220,38,38,.18),rgba(22,163,74,.18));padding:1px 6px;border-radius:4px;">Shading: 1d MA${this.settings.daily_ma_period} Regime</span>`,
         });
       } else {
         frameHost.innerHTML = `<div id="pfChartHost" style="height:450px;width:100%;position:relative;"></div>`;
@@ -1555,9 +1618,9 @@
 
     bindControls() {
       const replayIds = [
-        "pfConfidence", "pfUseDailyFilter", "pfDailyMaPeriod", "pfHoldSameDirection",
-        "pfDirectionMode", "pfNeutralBps", "pfLambda", "pfCostBps", "pfUseStopLoss",
-        "pfStopLossPct", "pfHorizon", "pfNotional", "pfLeverage",
+        "pfConfidence", "pfUseConfidenceGate", "pfUseDailyFilter", "pfDailyMaPeriod", "pfHoldSameDirection",
+        "pfDirectionMode", "pfNeutralBps", "pfUseExpectedEdgeGate", "pfMinExpectedBps", "pfLambda", "pfCostBps", "pfUseStopLoss",
+        "pfStopLossPct", "pfHorizon", "pfMinHoldBars", "pfNotional", "pfLeverage",
         "pfMomentumLookback", "pfMacdFast", "pfMacdSlow", "pfMacdSignal", "pfRsiPeriod", "pfMaFast", "pfMaSlow", "pfMaSlope", "pfAtrPeriod",
       ];
       replayIds.forEach((id) => document.getElementById(id)?.addEventListener("change", () => this.onSettingsEdited()));
@@ -1570,6 +1633,7 @@
         this.renderNativeSignalArrows();
       });
       document.getElementById("pfRefresh")?.addEventListener("click", () => this.refreshAll({ fit: false, force: true }));
+      document.getElementById("pfBtnValidatedPreset")?.addEventListener("click", () => this.applyValidatedEthPreset());
       document.getElementById("pfBtnUnlock")?.addEventListener("click", () => window.terminalLockManager?.openPasswordModal?.());
       document.getElementById("pfBtnSaveConfig")?.addEventListener("click", () => this.saveConfigToBot());
       document.getElementById("pfBtnToggleLive")?.addEventListener("click", () => this.toggleLiveBot());
@@ -1594,17 +1658,21 @@
         interval: val("pfInterval", this.settings.interval),
         notional_usd: val("pfNotional", this.settings.notional_usd),
         leverage: val("pfLeverage", this.settings.leverage),
+        use_confidence_gate: chk("pfUseConfidenceGate", this.settings.use_confidence_gate),
         confidence_pct: val("pfConfidence", this.settings.confidence_pct),
         use_daily_trend_filter: chk("pfUseDailyFilter", this.settings.use_daily_trend_filter),
         daily_ma_period: val("pfDailyMaPeriod", this.settings.daily_ma_period),
         hold_same_direction: chk("pfHoldSameDirection", this.settings.hold_same_direction),
         entry_direction_mode: val("pfDirectionMode", this.settings.entry_direction_mode),
         neutral_bps: val("pfNeutralBps", this.settings.neutral_bps),
+        use_expected_edge_gate: chk("pfUseExpectedEdgeGate", this.settings.use_expected_edge_gate),
+        min_expected_bps: val("pfMinExpectedBps", this.settings.min_expected_bps),
         ridge_lambda: val("pfLambda", this.settings.ridge_lambda),
         cost_bps: val("pfCostBps", this.settings.cost_bps),
         use_stop_loss: chk("pfUseStopLoss", this.settings.use_stop_loss),
         stop_loss_pct: val("pfStopLossPct", this.settings.stop_loss_pct),
         horizon_bars: val("pfHorizon", this.settings.horizon_bars),
+        min_hold_bars: val("pfMinHoldBars", this.settings.min_hold_bars),
         momentum_lookback: val("pfMomentumLookback", this.settings.momentum_lookback),
         macd_fast: val("pfMacdFast", this.settings.macd_fast),
         macd_slow: val("pfMacdSlow", this.settings.macd_slow),
@@ -1616,6 +1684,50 @@
         atr_period: val("pfAtrPeriod", this.settings.atr_period),
         ...Object.fromEntries(FEATURE_GROUPS.map((g) => [`use_${g}`, chk(`pfUse_${g}`, this.settings[`use_${g}`])])),
       });
+    }
+
+    applyValidatedEthPreset() {
+      const preset = normalizeSettings({
+        ...this.readControls(),
+        venue: "binance_futures",
+        symbol: "ETHUSDT",
+        interval: "4h",
+        horizon_bars: 1,
+        min_hold_bars: 3,
+        use_confidence_gate: true,
+        confidence_pct: 52,
+        use_expected_edge_gate: false,
+        use_daily_trend_filter: true,
+        daily_ma_period: 100,
+        hold_same_direction: true,
+        entry_direction_mode: "long_only",
+        use_stop_loss: false,
+        cost_bps: 10,
+        leverage: 1,
+      });
+      const values = {
+        pfVenue: preset.venue, pfSymbol: preset.symbol, pfInterval: preset.interval,
+        pfHorizon: preset.horizon_bars, pfMinHoldBars: preset.min_hold_bars,
+        pfConfidence: preset.confidence_pct, pfDailyMaPeriod: preset.daily_ma_period,
+        pfDirectionMode: preset.entry_direction_mode, pfCostBps: preset.cost_bps,
+        pfLeverage: preset.leverage,
+      };
+      Object.entries(values).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.value = String(value);
+      });
+      const checks = {
+        pfUseConfidenceGate: true, pfUseExpectedEdgeGate: false,
+        pfUseDailyFilter: true, pfHoldSameDirection: true, pfUseStopLoss: false,
+      };
+      Object.entries(checks).forEach(([id, checked]) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = checked;
+      });
+      this.settings = preset;
+      this.saveSettings();
+      window.showToast?.("ETH preset loaded for paper replay. Unlock and Save Strategy to change the paused live bot.", "success");
+      this.onVenueOrSymbolChanged();
     }
 
     syncFeatureBadges() {
@@ -1948,6 +2060,10 @@
       const confDetail = document.getElementById("pfCondConfDetail");
       const edgeBadge = document.getElementById("pfCondEdgeBadge");
       const edgeDetail = document.getElementById("pfCondEdgeDetail");
+      const holdBadge = document.getElementById("pfCondHoldBadge");
+      const holdDetail = document.getElementById("pfCondHoldDetail");
+      const stopBadge = document.getElementById("pfCondStopBadge");
+      const stopDetail = document.getElementById("pfCondStopDetail");
       const evalSource = document.getElementById("pfEvalSource");
 
       const dirLabel = ev.direction ? String(ev.direction).toUpperCase() : "NEUTRAL";
@@ -1970,14 +2086,61 @@
         dailyDetail.textContent = `1d Close ${formatPrice(ev.daily_close, ev.symbol)} vs MA${ev.daily_ma_period} ${formatPrice(ev.daily_ma, ev.symbol)} (${formatKst(ev.daily_close_time)})`;
       }
 
-      confBadge.textContent = ev.confidence_pass ? `PASS (${Number(ev.confidence_pct).toFixed(1)}%)` : `WAITING (${Number(ev.confidence_pct).toFixed(1)}%)`;
-      confBadge.className = `pfState ${ev.confidence_pass ? "" : "wait"}`;
-      confDetail.textContent = `${dirLabel} conf ${Number(ev.confidence_pct).toFixed(1)}% vs min ${Number(ev.min_confidence_pct).toFixed(0)}%`;
+      const confidenceGateOn = ev.use_confidence_gate !== undefined ? Boolean(ev.use_confidence_gate) : Boolean(this.settings.use_confidence_gate);
+      if (!confidenceGateOn) {
+        confBadge.textContent = "OFF";
+        confBadge.className = "pfState off";
+        confDetail.textContent = `Observed ${dirLabel} confidence ${Number(ev.confidence_pct).toFixed(1)}%`;
+      } else {
+        confBadge.textContent = ev.confidence_pass ? `PASS (${Number(ev.confidence_pct).toFixed(1)}%)` : `WAITING (${Number(ev.confidence_pct).toFixed(1)}%)`;
+        confBadge.className = `pfState ${ev.confidence_pass ? "" : "wait"}`;
+        confDetail.textContent = `${dirLabel} conf ${Number(ev.confidence_pct).toFixed(1)}% vs min ${Number(ev.min_confidence_pct).toFixed(0)}%`;
+      }
 
-      const rawDirectional = ev.raw_side !== 0;
-      edgeBadge.textContent = rawDirectional ? `PASS (${ev.expected_bps >= 0 ? "+" : ""}${Number(ev.expected_bps).toFixed(1)} bp)` : "NEUTRAL";
-      edgeBadge.className = `pfState ${rawDirectional ? "" : "wait"}`;
-      edgeDetail.textContent = `UP ${(Number(ev.probabilities?.up || 0) * 100).toFixed(1)}% · N ${(Number(ev.probabilities?.neutral || 0) * 100).toFixed(1)}% · DN ${(Number(ev.probabilities?.down || 0) * 100).toFixed(1)}%`;
+      const expectedEdgeGateOn = ev.use_expected_edge_gate !== undefined ? Boolean(ev.use_expected_edge_gate) : Boolean(this.settings.use_expected_edge_gate);
+      if (!expectedEdgeGateOn) {
+        edgeBadge.textContent = "OFF";
+        edgeBadge.className = "pfState off";
+        edgeDetail.textContent = `Expected ${Number(ev.expected_bps) >= 0 ? "+" : ""}${Number(ev.expected_bps).toFixed(1)} bp · informational`;
+      } else {
+        edgeBadge.textContent = ev.edge_pass ? `PASS (${Number(ev.expected_bps) >= 0 ? "+" : ""}${Number(ev.expected_bps).toFixed(1)} bp)` : `WAITING (${Number(ev.expected_bps).toFixed(1)} bp)`;
+        edgeBadge.className = `pfState ${ev.edge_pass ? "" : "wait"}`;
+        edgeDetail.textContent = `|Expected| ${Math.abs(Number(ev.expected_bps)).toFixed(1)} bp vs min ${Number(ev.min_expected_bps).toFixed(1)} bp`;
+      }
+
+      const paperPos = this.replayPayload?.open_position;
+      if (holdBadge && holdDetail) {
+        if (!paperPos) {
+          holdBadge.textContent = "N/A";
+          holdBadge.className = "pfState off";
+          holdDetail.textContent = `No paper position · minimum ${Number(ev.min_hold_bars || this.settings.min_hold_bars)} bars · streak hold ${ev.hold_same_direction ? "ON" : "OFF"}`;
+        } else {
+          const latestIdx = this.bars.length - 1;
+          const held = Math.max(0, latestIdx - Number(paperPos.entry_index) + 1);
+          const ready = held >= Number(ev.min_hold_bars || this.settings.min_hold_bars);
+          holdBadge.textContent = ready ? `PASS (${held} bars)` : `WAITING (${held} bars)`;
+          holdBadge.className = `pfState ${ready ? "" : "wait"}`;
+          holdDetail.textContent = `Exit eligible after ${Number(ev.min_hold_bars || this.settings.min_hold_bars)} completed bars · matching signal extends: ${ev.hold_same_direction ? "ON" : "OFF"}`;
+        }
+      }
+      if (stopBadge && stopDetail) {
+        if (!this.settings.use_stop_loss) {
+          stopBadge.textContent = "OFF";
+          stopBadge.className = "pfState off";
+          stopDetail.textContent = "Optional intrabar stop disabled";
+        } else if (!paperPos) {
+          stopBadge.textContent = "N/A";
+          stopBadge.className = "pfState off";
+          stopDetail.textContent = `No paper position · threshold ${Number(this.settings.stop_loss_pct).toFixed(1)}%`;
+        } else {
+          const side = Number(paperPos.side);
+          const ret = side * (Number(ev.close) / Number(paperPos.entry_price) - 1) * 100;
+          const hit = ret <= -Number(this.settings.stop_loss_pct);
+          stopBadge.textContent = hit ? "PASS (EXIT)" : "WAITING";
+          stopBadge.className = `pfState ${hit ? "" : "wait"}`;
+          stopDetail.textContent = `Completed-close move ${ret.toFixed(2)}% vs -${Number(this.settings.stop_loss_pct).toFixed(1)}% · replay also checks bar high/low`;
+        }
+      }
 
       if (evalSource) {
         evalSource.textContent = `Source: ${ev.venue === "lighter" ? "Lighter" : "Binance Futures"} completed ${ev.interval} bar closed ${formatKst(ev.close_time)} · ${ev.train_samples} samples`;
@@ -1988,6 +2151,10 @@
       if (!this.candleSeries || !this.bars.length) return;
       this.candleSeries.setData(this.bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
       const s = this.settings;
+      const legend = document.getElementById("pfChartLegend");
+      if (legend) {
+        legend.innerHTML = `<span style="color:#0284c7">— MA${s.ma_fast}</span><span style="color:#7c3aed">— MA${s.ma_slow}</span><span style="color:#d97706">┈ 1d MA${s.daily_ma_period} Trend</span><span><strong style="color:#16a34a">▶</strong> Long / Cover</span><span><strong style="color:#dc2626">▶</strong> Short / Sell</span><span style="background:linear-gradient(90deg,rgba(220,38,38,.18),rgba(22,163,74,.18));padding:1px 6px;border-radius:4px;">Shading: 1d MA${s.daily_ma_period} Regime</span>`;
+      }
       const maFast = simpleMovingAverage(this.bars.map((b) => b.close), s.ma_fast);
       const maSlow = simpleMovingAverage(this.bars.map((b) => b.close), s.ma_slow);
       this.maFastSeries?.setData(this.bars.map((b, i) => finite(maFast[i]) ? { time: b.time, value: maFast[i] } : null).filter(Boolean));
@@ -2362,8 +2529,12 @@
         selected_symbol: s.symbol,
         strategy_interval: s.interval,
         horizon_bars: s.horizon_bars,
+        min_hold_bars: s.min_hold_bars,
         neutral_bps: s.neutral_bps,
+        use_confidence_gate: s.use_confidence_gate,
         confidence_pct: s.confidence_pct,
+        use_expected_edge_gate: s.use_expected_edge_gate,
+        min_expected_bps: s.min_expected_bps,
         ridge_lambda: s.ridge_lambda,
         train_window: s.train_window,
         min_train_samples: s.min_train_samples,

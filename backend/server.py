@@ -860,7 +860,7 @@ async def lighter_crypto_bot_worker():
 
 
 async def forecast_bot_worker():
-    """Evaluate Tab 11 Causal Ridge + 1d MA20 bot on completed candles."""
+    """Evaluate Tab 11 causal Ridge bot on completed candles."""
     while True:
         try:
             await forecast_bot.run_once()
@@ -2284,7 +2284,7 @@ async def get_forecast_trader_candles(
     include_daily: bool = True,
     daily_ma_period: int = 20,
 ) -> Dict[str, Any]:
-    """Completed + forming chart candles, completed 1d bars/MA20 overlay, and paired fill markers."""
+    """Completed + forming chart candles, adjustable completed-1d MA overlay, and paired fill markers."""
     venue_norm = "lighter" if str(venue).lower() == "lighter" else "binance_futures"
     interval_norm = interval if interval in {"5m", "15m", "1h", "4h"} else "4h"
     interval_sec = FORECAST_INTERVAL_SECONDS[interval_norm]
@@ -2437,16 +2437,20 @@ async def get_forecast_trader_replay(
     symbol: str = "ETHUSDT",
     interval: str = "4h",
     horizon_bars: int = 1,
+    min_hold_bars: int = 3,
     neutral_bps: float = 8.0,
-    confidence_pct: float = 49.0,
+    confidence_pct: float = 52.0,
+    use_confidence_gate: bool = True,
+    use_expected_edge_gate: bool = False,
+    min_expected_bps: float = 8.0,
     ridge_lambda: float = 400.0,
     train_window: int = 1000,
     min_train_samples: int = 180,
     cost_bps: float = 10.0,
     use_daily_trend_filter: bool = True,
-    daily_ma_period: int = 20,
+    daily_ma_period: int = 100,
     hold_same_direction: bool = True,
-    entry_direction_mode: str = "two_way",
+    entry_direction_mode: str = "long_only",
     use_stop_loss: bool = False,
     stop_loss_pct: float = 3.0,
     momentum_lookback: int = 6,
@@ -2477,8 +2481,12 @@ async def get_forecast_trader_replay(
             "symbol": sym,
             "interval": interval_norm,
             "horizon_bars": horizon_bars,
+            "min_hold_bars": min_hold_bars,
             "neutral_bps": neutral_bps,
             "confidence_pct": confidence_pct,
+            "use_confidence_gate": use_confidence_gate,
+            "use_expected_edge_gate": use_expected_edge_gate,
+            "min_expected_bps": min_expected_bps,
             "ridge_lambda": ridge_lambda,
             "train_window": train_window,
             "min_train_samples": min_train_samples,

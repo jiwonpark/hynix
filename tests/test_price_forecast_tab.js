@@ -6,6 +6,13 @@ const modulePath = path.join(__dirname, "../price-forecast-tab.js");
 delete require.cache[require.resolve(modulePath)];
 const forecast = require(modulePath);
 
+assert.equal(forecast.DEFAULT_SETTINGS.symbol, "ETHUSDT");
+assert.equal(forecast.DEFAULT_SETTINGS.confidence_pct, 52);
+assert.equal(forecast.DEFAULT_SETTINGS.daily_ma_period, 100);
+assert.equal(forecast.DEFAULT_SETTINGS.entry_direction_mode, "long_only");
+assert.equal(forecast.DEFAULT_SETTINGS.horizon_bars, 1);
+assert.equal(forecast.DEFAULT_SETTINGS.min_hold_bars, 3);
+
 function syntheticBars(count = 900) {
   const start = 1_700_000_000;
   const bars = [];
@@ -176,5 +183,37 @@ assert.equal(rep1.summary.eval_bars, 360);
 assert.equal(rep1.latest_evaluation.close_time, bars1350[1349].close_time, "forming 4h candle must be excluded from evaluation");
 assert.deepEqual(rep1.entry_signals, rep5.entry_signals, "notional/leverage/stop-loss must never mutate position-independent entry_signals");
 assert.ok(replayMs < 5000, `client V8 replay should be fast (<5000ms), got ${replayMs}ms`);
+
+const firstPaperEntry = rep1.markers.find((marker) => marker.is_entry);
+assert.ok(firstPaperEntry, "replay should create at least one simulated fill");
+const fillIndex = bars1350.findIndex((bar) => bar.time === firstPaperEntry.time);
+assert.ok(fillIndex > 0, "paper entry must occur after its completed signal candle");
+assert.equal(firstPaperEntry.entry_price, bars1350[fillIndex].open,
+  "paper fills must use the next bar open, never the signal candle close");
+assert.ok(rep1.entry_signals.some((signal) => signal.entry_allowed && signal.index === fillIndex - 1),
+  "next-open fill must be linked to the independently retained prior-candle entry signal");
+assert.equal(rep1.summary.fill_model, "next_bar_open");
+
+const held3 = forecast.runCausalReplayWithDaily(bars1350, daily180, {
+  ...forecast.DEFAULT_SETTINGS, confidence_pct: 45, min_hold_bars: 3,
+}, { max_eval_bars: 360, notional_usd: 200, leverage: 1 });
+assert.ok(held3.trades.every((trade) => trade.reason === "stop_loss" || trade.exit_time - trade.entry_time >= 3 * 14400),
+  "minimum hold must delay ordinary paper exits for the configured completed-bar count");
+
+const edgeBlocked = forecast.runCausalReplayWithDaily(bars1350, daily180, {
+  ...forecast.DEFAULT_SETTINGS, confidence_pct: 0, use_expected_edge_gate: true, min_expected_bps: 500,
+}, { max_eval_bars: 120 });
+assert.ok(edgeBlocked.entry_signals.length > 0);
+assert.ok(edgeBlocked.entry_signals.every((signal) => !signal.entry_allowed && signal.edge_pass === false),
+  "expected-edge switch and threshold must gate the real entry stream");
+
+const confidenceOff = forecast.runCausalReplayWithDaily(bars1350, daily180, {
+  ...forecast.DEFAULT_SETTINGS, use_confidence_gate: false, confidence_pct: 100,
+}, { max_eval_bars: 120 });
+assert.ok(confidenceOff.entry_signals.some((signal) => signal.entry_allowed),
+  "disabling the confidence gate must affect replay instead of leaving a decorative switch");
+assert.match(source, /id="pfBtnValidatedPreset"/);
+assert.match(source, /min_hold_bars:\s*3/,
+  "validated ETH preset must keep one-bar prediction separate from three-bar minimum hold");
 
 console.log(`Causal price forecast tab tests passed (V8 360x1000 replay=${replayMs}ms)`);

@@ -27,16 +27,20 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "symbol": "ETHUSDT",
     "interval": "4h",
     "horizon_bars": 1,
+    "min_hold_bars": 3,
     "neutral_bps": 8.0,
-    "confidence_pct": 49.0,
+    "confidence_pct": 52.0,
+    "use_confidence_gate": True,
+    "use_expected_edge_gate": False,
+    "min_expected_bps": 8.0,
     "ridge_lambda": 400.0,
     "train_window": 1000,
     "min_train_samples": 180,
     "cost_bps": 10.0,
     "use_daily_trend_filter": True,
-    "daily_ma_period": 20,
+    "daily_ma_period": 100,
     "hold_same_direction": True,
-    "entry_direction_mode": "two_way",
+    "entry_direction_mode": "long_only",
     "use_stop_loss": False,
     "stop_loss_pct": 3.0,
     "momentum_lookback": 6,
@@ -109,8 +113,12 @@ def normalize_settings(raw: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         "symbol": symbol,
         "interval": interval,
         "horizon_bars": round(_clamp(merged["horizon_bars"], 1, 12)),
+        "min_hold_bars": round(_clamp(merged.get("min_hold_bars", 1), 1, 24)),
         "neutral_bps": _clamp(merged["neutral_bps"], 0, 500),
         "confidence_pct": _clamp(merged["confidence_pct"], 0, 100),
+        "use_confidence_gate": bool(merged.get("use_confidence_gate", True)),
+        "use_expected_edge_gate": bool(merged.get("use_expected_edge_gate", False)),
+        "min_expected_bps": _clamp(merged.get("min_expected_bps", 8.0), 0, 500),
         "ridge_lambda": _clamp(merged["ridge_lambda"], 0.0001, 10000),
         "train_window": round(_clamp(merged["train_window"], 100, 1200)),
         "min_train_samples": round(_clamp(merged["min_train_samples"], 60, 1000)),
@@ -857,8 +865,10 @@ def evaluate_live_signal(
     raw_dir = latest["direction"]
     raw_side = 1 if raw_dir == "up" else (-1 if raw_dir == "down" else 0)
     conf_pct = float(latest["confidence"]) * 100.0
-    conf_ok = conf_pct >= float(settings["confidence_pct"])
-    band_ok = abs(float(latest["expected_bps"])) > float(settings["neutral_bps"]) or raw_side != 0
+    confidence_gate_on = bool(settings["use_confidence_gate"])
+    conf_ok = (not confidence_gate_on) or conf_pct >= float(settings["confidence_pct"])
+    edge_gate_on = bool(settings["use_expected_edge_gate"])
+    edge_ok = (not edge_gate_on) or abs(float(latest["expected_bps"])) >= float(settings["min_expected_bps"])
 
     daily_filter_on = bool(settings["use_daily_trend_filter"])
     daily_ready = daily_ctx is not None
@@ -878,6 +888,7 @@ def evaluate_live_signal(
     entry_allowed = (
         raw_side != 0
         and conf_ok
+        and edge_ok
         and side_allowed_by_daily
         and entry_direction_allowed(dir_mode, raw_side)
     )
@@ -898,9 +909,12 @@ def evaluate_live_signal(
         "raw_side": raw_side,
         "expected_bps": float(latest["expected_bps"]),
         "confidence_pct": conf_pct,
+        "use_confidence_gate": confidence_gate_on,
         "min_confidence_pct": float(settings["confidence_pct"]),
         "confidence_pass": conf_ok,
-        "band_pass": band_ok,
+        "use_expected_edge_gate": edge_gate_on,
+        "min_expected_bps": float(settings["min_expected_bps"]),
+        "edge_pass": edge_ok,
         "probabilities": latest["probabilities"],
         "residual_sigma_bps": float(latest["residual_sigma_bps"]),
         "train_samples": int(latest["train_samples"]),
@@ -915,6 +929,7 @@ def evaluate_live_signal(
         "daily_allows_short": daily_allows_short,
         "side_allowed_by_daily": side_allowed_by_daily,
         "hold_same_direction": bool(settings["hold_same_direction"]),
+        "min_hold_bars": int(settings["min_hold_bars"]),
         "entry_direction_mode": dir_mode,
         "entry_allowed": entry_allowed,
         "feature_names": latest["feature_names"],
@@ -976,6 +991,14 @@ def run_causal_replay(
         d_ctx = aligned_daily[src_idx]
         d_trend = int(d_ctx["daily_trend"]) if d_ctx else 0
         raw_side = 1 if step["direction"] == "up" else (-1 if step["direction"] == "down" else 0)
+        confidence_pass = (
+            (not bool(settings["use_confidence_gate"]))
+            or float(step["confidence"]) * 100.0 >= float(settings["confidence_pct"])
+        )
+        edge_pass = (
+            (not bool(settings["use_expected_edge_gate"]))
+            or abs(float(step["expected_bps"])) >= float(settings["min_expected_bps"])
+        )
 
         if daily_on:
             daily_ok = (d_ctx is not None) and ((raw_side == 1 and d_trend > 0) or (raw_side == -1 and d_trend < 0))
@@ -986,7 +1009,8 @@ def run_causal_replay(
 
         entry_allowed = (
             raw_side != 0
-            and bool(step["qualified"])
+            and confidence_pass
+            and edge_pass
             and daily_ok
             and entry_direction_allowed(dir_mode, raw_side)
         )
@@ -1011,7 +1035,9 @@ def run_causal_replay(
                 "raw_direction": step["direction"],
                 "raw_side": raw_side,
                 "side": raw_side if entry_allowed else 0,
-                "qualified": bool(step["qualified"]),
+                "qualified": bool(confidence_pass),
+                "confidence_pass": bool(confidence_pass),
+                "edge_pass": bool(edge_pass),
                 "confidence_pct": float(step["confidence"]) * 100.0,
                 "expected_bps": float(step["expected_bps"]),
                 "daily_trend": trend_sign,
@@ -1023,9 +1049,10 @@ def run_causal_replay(
             }
         )
 
-    # Simulate trades chronologically cleanly WITHOUT modifying entry_signals.
+    # Simulate signals at completed closes and fills at the next bar open. This
+    # mirrors live evaluation latency and keeps signal arrows independent of fills.
     signal_by_index = {sig["index"]: sig for sig in entry_signals}
-    horizon = int(settings["horizon_bars"])
+    min_hold_bars = int(settings["min_hold_bars"])
     hold_same = bool(settings["hold_same_direction"])
     fee_rate = float(settings["cost_bps"]) / 10000.0
     use_sl = bool(settings["use_stop_loss"])
@@ -1034,194 +1061,125 @@ def run_causal_replay(
     trades: List[Dict[str, Any]] = []
     markers: List[Dict[str, Any]] = []
     open_pos: Optional[Dict[str, Any]] = None
+    pending_action: Optional[Dict[str, Any]] = None
     eq = float(initial_equity_usd)
     peak = eq
     max_dd = 0.0
     worst_trade_pct = 0.0
     wins = 0
 
+    def record_exit(exit_px: float, bar_time: int, reason: str, hover_prefix: str) -> None:
+        nonlocal open_pos, eq, peak, max_dd, worst_trade_pct, wins
+        if open_pos is None:
+            return
+        raw_ret = open_pos["side"] * (exit_px / open_pos["entry_price"] - 1.0)
+        net_ret = raw_ret - fee_rate
+        pnl_pct = net_ret * 100.0
+        roe_pct = net_ret * 100.0 * float(leverage)
+        pnl_usd = open_pos["notional"] * net_ret
+        fee_usd = open_pos["notional"] * fee_rate
+        eq = max(0.0, eq + pnl_usd)
+        peak = max(peak, eq)
+        if peak > 0:
+            max_dd = max(max_dd, (peak - eq) / peak * 100.0)
+        worst_trade_pct = min(worst_trade_pct, roe_pct)
+        if pnl_usd > 0:
+            wins += 1
+        pair_key = open_pos["pairKey"]
+        direction = "long" if open_pos["side"] > 0 else "short"
+        trades.append({
+            "pairKey": pair_key, "symbol": settings["symbol"], "side": open_pos["side"],
+            "direction": direction, "signal_time": open_pos["signal_time"],
+            "entry_time": open_pos["entry_time"], "exit_time": bar_time,
+            "entry_price": open_pos["entry_price"], "exit_price": exit_px,
+            "qty": open_pos["qty"], "notional": open_pos["notional"], "fee_usd": fee_usd,
+            "gross_pnl_usd": open_pos["notional"] * raw_ret, "net_pnl_usd": pnl_usd,
+            "pnl_pct": pnl_pct, "roe_pct": roe_pct, "reason": reason,
+            "source": "virtual", "hypothetical": True,
+        })
+        markers.append({
+            "time": bar_time, "source": "virtual", "hypothetical": True,
+            "is_entry": False, "is_exit": True, "side": -open_pos["side"],
+            "direction": direction, "ratio": exit_px, "entry_price": open_pos["entry_price"],
+            "exit_price": exit_px, "qty": open_pos["qty"], "notional": open_pos["notional"],
+            "pairKey": pair_key, "pnl": pnl_usd, "pnl_pct": pnl_pct, "pnl_authoritative": True,
+            "hoverText": f"{hover_prefix} @ ${exit_px:,.2f} · net {pnl_usd:+.2f} USD ({pnl_pct:+.2f}%)",
+        })
+        open_pos = None
+
+    def record_entry(side: int, sig: Dict[str, Any], idx: int, entry_px: float) -> None:
+        nonlocal open_pos
+        bar_time = int(bars[idx]["time"])
+        pair_key = f"paper:{len(trades) + 1}:{bar_time}"
+        notional = float(notional_usd) * float(leverage)
+        qty = notional / entry_px
+        direction = "long" if side > 0 else "short"
+        open_pos = {
+            "pairKey": pair_key, "side": side, "entry_index": idx, "entry_time": bar_time,
+            "signal_time": int(sig["time"]), "entry_price": entry_px, "qty": qty,
+            "notional": notional, "renewals": 0,
+        }
+        markers.append({
+            "time": bar_time, "source": "virtual", "hypothetical": True,
+            "is_entry": True, "is_exit": False, "side": side, "direction": direction,
+            "ratio": entry_px, "entry_price": entry_px, "exit_price": None, "qty": qty,
+            "notional": notional, "pairKey": pair_key, "pnl": None, "pnl_pct": None,
+            "hoverText": f"PAPER {'LONG' if side > 0 else 'SHORT'} NEXT-OPEN @ ${entry_px:,.2f} · signal {sig['confidence_pct']:.1f}% · {sig['expected_bps']:+.1f}bp",
+        })
+
     for idx in range(earliest, len(bars)):
         bar = bars[idx]
         bar_time = int(bar["time"])
+        bar_open = float(bar["open"])
         bar_close = float(bar["close"])
         bar_high = float(bar["high"])
         bar_low = float(bar["low"])
+
+        if pending_action is not None:
+            action = pending_action
+            pending_action = None
+            if action["kind"] in {"exit", "reverse"}:
+                record_exit(bar_open, bar_time, action["reason"], f"PAPER NEXT-OPEN EXIT ({action['reason']})")
+            if action["kind"] in {"entry", "reverse"} and action.get("side"):
+                record_entry(int(action["side"]), action["signal"], idx, bar_open)
+
+        if open_pos is not None and use_sl:
+            stop_px = None
+            if open_pos["side"] > 0 and bar_low <= open_pos["entry_price"] * (1.0 - sl_frac):
+                stop_px = open_pos["entry_price"] * (1.0 - sl_frac)
+            elif open_pos["side"] < 0 and bar_high >= open_pos["entry_price"] * (1.0 + sl_frac):
+                stop_px = open_pos["entry_price"] * (1.0 + sl_frac)
+            if stop_px is not None:
+                record_exit(stop_px, bar_time, "stop_loss", "PAPER STOP EXIT")
+
+        # Include adverse intratrade marks in drawdown; realized P&L remains fill based.
+        if open_pos is not None and peak > 0:
+            adverse_px = bar_low if open_pos["side"] > 0 else bar_high
+            adverse_ret = open_pos["side"] * (adverse_px / open_pos["entry_price"] - 1.0) - fee_rate
+            adverse_eq = max(0.0, eq + open_pos["notional"] * adverse_ret)
+            max_dd = max(max_dd, (peak - adverse_eq) / peak * 100.0)
+            close_ret = open_pos["side"] * (bar_close / open_pos["entry_price"] - 1.0) - fee_rate
+            peak = max(peak, eq + open_pos["notional"] * close_ret)
+
         sig = signal_by_index.get(idx)
         sig_side = int(sig["side"]) if sig else 0
-
-        # 1. Check stop-loss intrabar on open position
-        if open_pos is not None and use_sl:
-            hit_sl = False
-            exit_px = bar_close
-            if open_pos["side"] > 0 and bar_low <= open_pos["entry_price"] * (1.0 - sl_frac):
-                hit_sl = True
-                exit_px = open_pos["entry_price"] * (1.0 - sl_frac)
-            elif open_pos["side"] < 0 and bar_high >= open_pos["entry_price"] * (1.0 + sl_frac):
-                hit_sl = True
-                exit_px = open_pos["entry_price"] * (1.0 + sl_frac)
-            if hit_sl:
-                raw_ret = open_pos["side"] * (exit_px / open_pos["entry_price"] - 1.0)
-                net_ret = raw_ret - fee_rate
-                pnl_pct = net_ret * 100.0
-                roe_pct = net_ret * 100.0 * float(leverage)
-                pnl_usd = open_pos["notional"] * net_ret
-                fee_usd = open_pos["notional"] * fee_rate
-                eq = max(0.0, eq + pnl_usd)
-                peak = max(peak, eq)
-                if peak > 0:
-                    max_dd = max(max_dd, (peak - eq) / peak * 100.0)
-                worst_trade_pct = min(worst_trade_pct, roe_pct)
-                if pnl_usd > 0:
-                    wins += 1
-                pair_key = open_pos["pairKey"]
-                trades.append(
-                    {
-                        "pairKey": pair_key,
-                        "symbol": settings["symbol"],
-                        "side": open_pos["side"],
-                        "direction": "long" if open_pos["side"] > 0 else "short",
-                        "entry_time": open_pos["entry_time"],
-                        "exit_time": bar_time,
-                        "entry_price": open_pos["entry_price"],
-                        "exit_price": exit_px,
-                        "qty": open_pos["qty"],
-                        "notional": open_pos["notional"],
-                        "fee_usd": fee_usd,
-                        "gross_pnl_usd": open_pos["notional"] * raw_ret,
-                        "net_pnl_usd": pnl_usd,
-                        "pnl_pct": pnl_pct,
-                        "roe_pct": roe_pct,
-                        "reason": "stop_loss",
-                        "source": "virtual",
-                        "hypothetical": True,
-                    }
-                )
-                markers.append(
-                    {
-                        "time": bar_time,
-                        "source": "virtual",
-                        "hypothetical": True,
-                        "is_entry": False,
-                        "is_exit": True,
-                        "side": -open_pos["side"],
-                        "direction": "long" if open_pos["side"] > 0 else "short",
-                        "ratio": exit_px,
-                        "entry_price": open_pos["entry_price"],
-                        "exit_price": exit_px,
-                        "qty": open_pos["qty"],
-                        "notional": open_pos["notional"],
-                        "pairKey": pair_key,
-                        "pnl": pnl_usd,
-                        "pnl_pct": pnl_pct,
-                        "pnl_authoritative": True,
-                        "hoverText": f"PAPER STOP EXIT @ ${exit_px:,.2f} · net {pnl_usd:+.2f} USD ({pnl_pct:+.2f}%)",
-                    }
-                )
-                open_pos = None
-
-        # 2. Evaluate exit at bar close after horizon_bars
+        if idx + 1 >= len(bars):
+            continue
         if open_pos is not None:
-            held = idx - open_pos["entry_index"]
-            if held >= horizon:
+            held = idx - open_pos["entry_index"] + 1
+            if held >= min_hold_bars:
                 if hold_same and sig_side == open_pos["side"]:
                     open_pos["renewals"] += 1
                 else:
-                    exit_px = bar_close
-                    raw_ret = open_pos["side"] * (exit_px / open_pos["entry_price"] - 1.0)
-                    net_ret = raw_ret - fee_rate
-                    pnl_pct = net_ret * 100.0
-                    roe_pct = net_ret * 100.0 * float(leverage)
-                    pnl_usd = open_pos["notional"] * net_ret
-                    fee_usd = open_pos["notional"] * fee_rate
-                    eq = max(0.0, eq + pnl_usd)
-                    peak = max(peak, eq)
-                    if peak > 0:
-                        max_dd = max(max_dd, (peak - eq) / peak * 100.0)
-                    worst_trade_pct = min(worst_trade_pct, roe_pct)
-                    if pnl_usd > 0:
-                        wins += 1
-                    reason = "opposite_reversal" if (sig_side != 0 and sig_side != open_pos["side"]) else "horizon_exit"
-                    pair_key = open_pos["pairKey"]
-                    trades.append(
-                        {
-                            "pairKey": pair_key,
-                            "symbol": settings["symbol"],
-                            "side": open_pos["side"],
-                            "direction": "long" if open_pos["side"] > 0 else "short",
-                            "entry_time": open_pos["entry_time"],
-                            "exit_time": bar_time,
-                            "entry_price": open_pos["entry_price"],
-                            "exit_price": exit_px,
-                            "qty": open_pos["qty"],
-                            "notional": open_pos["notional"],
-                            "fee_usd": fee_usd,
-                            "gross_pnl_usd": open_pos["notional"] * raw_ret,
-                            "net_pnl_usd": pnl_usd,
-                            "pnl_pct": pnl_pct,
-                            "roe_pct": roe_pct,
-                            "reason": reason,
-                            "source": "virtual",
-                            "hypothetical": True,
-                        }
-                    )
-                    markers.append(
-                        {
-                            "time": bar_time,
-                            "source": "virtual",
-                            "hypothetical": True,
-                            "is_entry": False,
-                            "is_exit": True,
-                            "side": -open_pos["side"],
-                            "direction": "long" if open_pos["side"] > 0 else "short",
-                            "ratio": exit_px,
-                            "entry_price": open_pos["entry_price"],
-                            "exit_price": exit_px,
-                            "qty": open_pos["qty"],
-                            "notional": open_pos["notional"],
-                            "pairKey": pair_key,
-                            "pnl": pnl_usd,
-                            "pnl_pct": pnl_pct,
-                            "pnl_authoritative": True,
-                            "hoverText": f"PAPER EXIT ({reason}) @ ${exit_px:,.2f} · net {pnl_usd:+.2f} USD ({pnl_pct:+.2f}%)",
-                        }
-                    )
-                    open_pos = None
-
-        # 3. Evaluate entry at bar close (excluding very last bar if we only simulate completed trades cleanly? No: latest entry shows open position!)
-        if open_pos is None and sig_side != 0 and sig is not None:
-            pair_key = f"paper:{len(trades) + 1}:{bar_time}"
-            notional = float(notional_usd) * float(leverage)
-            qty = notional / bar_close
-            open_pos = {
-                "pairKey": pair_key,
-                "side": sig_side,
-                "entry_index": idx,
-                "entry_time": bar_time,
-                "entry_price": bar_close,
-                "qty": qty,
-                "notional": notional,
-                "renewals": 0,
-            }
-            markers.append(
-                {
-                    "time": bar_time,
-                    "source": "virtual",
-                    "hypothetical": True,
-                    "is_entry": True,
-                    "is_exit": False,
-                    "side": sig_side,
-                    "direction": "long" if sig_side > 0 else "short",
-                    "ratio": bar_close,
-                    "entry_price": bar_close,
-                    "exit_price": None,
-                    "qty": qty,
-                    "notional": notional,
-                    "pairKey": pair_key,
-                    "pnl": None,
-                    "pnl_pct": None,
-                    "hoverText": f"PAPER {'LONG' if sig_side > 0 else 'SHORT'} @ ${bar_close:,.2f} · conf {sig['confidence_pct']:.1f}% · {sig['expected_bps']:+.1f}bp",
-                }
-            )
+                    reversing = bool(sig and sig_side != 0 and sig_side != open_pos["side"])
+                    pending_action = {
+                        "kind": "reverse" if reversing else "exit",
+                        "side": sig_side if reversing else 0,
+                        "signal": sig,
+                        "reason": "opposite_signal_reversal" if reversing else "horizon_exit",
+                    }
+        elif sig is not None and sig_side != 0:
+            pending_action = {"kind": "entry", "side": sig_side, "signal": sig, "reason": "signal_entry"}
 
     _, _, _, latest_eval = evaluate_live_signal(bars, daily_bars, settings)
     total_trades = len(trades)
@@ -1252,6 +1210,8 @@ def run_causal_replay(
             "worst_trade_pct": worst_trade_pct if total_trades else 0.0,
             "total_fees_usd": total_fees_usd,
             "fee_bps": float(settings["cost_bps"]),
+            "fill_model": "next_bar_open",
+            "min_hold_bars": min_hold_bars,
             "hold_same_direction": hold_same,
             "use_daily_trend_filter": bool(settings["use_daily_trend_filter"]),
             "eval_bars": len(entry_signals),

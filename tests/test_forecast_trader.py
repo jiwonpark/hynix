@@ -207,8 +207,12 @@ class ForecastTraderTests(unittest.TestCase):
             "symbol": "ETHUSDT",
             "interval": "4h",
             "horizon_bars": 1,
+            "min_hold_bars": 3,
             "neutral_bps": 8,
             "confidence_pct": 44,
+            "use_confidence_gate": True,
+            "use_expected_edge_gate": True,
+            "min_expected_bps": 2,
             "ridge_lambda": 400,
             "train_window": 200,
             "min_train_samples": 100,
@@ -260,6 +264,56 @@ class ForecastTraderTests(unittest.TestCase):
         self.assertAlmostEqual(py_rep["summary"]["worst_trade_pct"], js_rep["summary"]["worst_trade_pct"], places=8)
         self.assertEqual(py_rep["latest_evaluation"]["entry_allowed"], js_rep["latest_evaluation"]["entry_allowed"])
         self.assertAlmostEqual(py_rep["latest_evaluation"]["expected_bps"], js_rep["latest_evaluation"]["expected_bps"], places=8)
+        self.assertEqual(py_rep["summary"]["fill_model"], "next_bar_open")
+        first_entry = next(marker for marker in py_rep["markers"] if marker["is_entry"])
+        fill_index = next(i for i, bar in enumerate(bars) if bar["time"] == first_entry["time"])
+        self.assertEqual(first_entry["entry_price"], bars[fill_index]["open"])
+        self.assertTrue(any(sig["entry_allowed"] and sig["index"] == fill_index - 1 for sig in py_rep["entry_signals"]))
+        self.assertTrue(all(
+            trade["reason"] == "stop_loss" or trade["exit_time"] - trade["entry_time"] >= 3 * 14400
+            for trade in py_rep["trades"]
+        ))
+
+    def test_optional_entry_gates_change_real_signal_stream(self):
+        bars = _synthetic_4h_bars(360)
+        daily = _synthetic_1d_bars_from_4h(bars, bias="up")
+        base = {
+            "min_train_samples": 100,
+            "train_window": 200,
+            "use_daily_trend_filter": False,
+            "confidence_pct": 100,
+        }
+        confidence_off = causal_ridge.run_causal_replay(
+            bars, daily, {**base, "use_confidence_gate": False}, max_eval_bars=120,
+        )
+        self.assertTrue(any(sig["entry_allowed"] for sig in confidence_off["entry_signals"]))
+
+        edge_blocked = causal_ridge.run_causal_replay(
+            bars, daily,
+            {**base, "use_confidence_gate": False, "use_expected_edge_gate": True, "min_expected_bps": 500},
+            max_eval_bars=120,
+        )
+        self.assertTrue(edge_blocked["entry_signals"])
+        self.assertTrue(all(not sig["entry_allowed"] and not sig["edge_pass"] for sig in edge_blocked["entry_signals"]))
+
+    def test_research_defaults_do_not_silently_migrate_persisted_live_state(self):
+        self.assertEqual(causal_ridge.DEFAULT_SETTINGS["confidence_pct"], 52.0)
+        self.assertEqual(causal_ridge.DEFAULT_SETTINGS["daily_ma_period"], 100)
+        self.assertEqual(causal_ridge.DEFAULT_SETTINGS["entry_direction_mode"], "long_only")
+        self.assertEqual(causal_ridge.DEFAULT_SETTINGS["min_hold_bars"], 3)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            state_file.write_text(json.dumps({
+                "enabled": False,
+                "confidence_pct": 49.0,
+                "daily_ma_period": 20,
+                "entry_direction_mode": "two_way",
+            }))
+            bot = ForecastTraderBot(_FakeBinanceClient(), state_path=state_file)
+            self.assertEqual(bot.state["confidence_pct"], 49.0)
+            self.assertEqual(bot.state["daily_ma_period"], 20)
+            self.assertEqual(bot.state["entry_direction_mode"], "two_way")
+            self.assertEqual(bot.state["min_hold_bars"], 1)
 
     def test_daily_filter_causality_and_position_independence(self):
         bars = _synthetic_4h_bars(340)

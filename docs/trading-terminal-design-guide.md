@@ -78,6 +78,30 @@ condition candle's price.
 Regression coverage for every new replay strategy must demonstrate that a second
 qualifying candle is still returned while the simulated position remains open.
 
+## Tab 11 execution-realistic replay and ETH research preset
+
+Tab 11 evaluates Ridge entry conditions on completed candles but simulates fills
+at the next candle open. Signal arrows remain on the completed source candle;
+paired paper trade markers and P&L use the next-open fill. Ordinary signal exits
+are decided at a completed close and filled at the following open. Intrabar stop
+fills remain at the configured stop price and are explicitly hypothetical.
+Drawdown includes adverse high/low marks while a paper position is open.
+
+Keep forecast horizon and minimum holding time as separate settings. Forecast
+horizon defines the Ridge target label; minimum hold defines when a filled paper
+or live position first becomes eligible for an ordinary signal exit. Matching
+same-direction signals may extend the hold when the independent Hold Streaks
+switch is enabled. Neither setting may suppress the position-independent
+`entry_signals` stream.
+
+The **ETH Research Preset** is the fresh Tab 11 paper default and an explicit
+reload button, not an automatic live migration: ETHUSDT 4h, one-bar forecast, three-bar minimum hold, confidence gate
+52%, completed daily MA100 long-only regime, 10 bp modeled round-trip cost, 1x,
+and no stop. Loading it never changes the saved bot or arms execution. Authenticated
+Save Strategy is required, and deployment alone must preserve legacy saved values.
+Do not label the preset validated for BTC or as guaranteed profitable. Preserve
+the dated validation evidence in `docs/tab11-eth-validation-2026-11-27.md`.
+
 
 # Account, chart, and time verification
 

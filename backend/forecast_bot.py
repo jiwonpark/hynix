@@ -1,4 +1,4 @@
-"""Persisted, fail-closed autonomous executor for Tab 11 (4h Causal Ridge + 1d MA20)."""
+"""Persisted, fail-closed autonomous executor for Tab 11 causal Ridge trading."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def canonical_symbol(venue: str, symbol: str) -> str:
 
 
 class ForecastTraderBot:
-    """Autonomous single-leg trader executing Causal Ridge + 1d MA20 across Binance Futures or Lighter."""
+    """Autonomous single-leg trader executing causal Ridge plus a completed-daily trend gate."""
 
     GROSS_LEVERAGE_CAP = 2.0
     MARGIN_BUFFER_MULTIPLIER = 1.25
@@ -68,8 +68,12 @@ class ForecastTraderBot:
         "strategy_mode": "causal_ridge_daily",
         "strategy_interval": "4h",
         "horizon_bars": 1,
+        "min_hold_bars": 1,
         "neutral_bps": 8.0,
         "confidence_pct": 49.0,
+        "use_confidence_gate": True,
+        "use_expected_edge_gate": False,
+        "min_expected_bps": 8.0,
         "ridge_lambda": 400.0,
         "train_window": 1000,
         "min_train_samples": 180,
@@ -173,8 +177,9 @@ class ForecastTraderBot:
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
         permitted = {
-            "venue", "selected_symbol", "strategy_interval", "horizon_bars",
-            "neutral_bps", "confidence_pct", "ridge_lambda", "train_window",
+            "venue", "selected_symbol", "strategy_interval", "horizon_bars", "min_hold_bars",
+            "neutral_bps", "confidence_pct", "use_confidence_gate",
+            "use_expected_edge_gate", "min_expected_bps", "ridge_lambda", "train_window",
             "min_train_samples", "cost_bps", "use_daily_trend_filter", "daily_ma_period",
             "hold_same_direction", "entry_direction_mode", "use_stop_loss", "stop_loss_pct",
             "momentum_lookback", "macd_fast", "macd_slow", "macd_signal", "rsi_period",
@@ -201,8 +206,12 @@ class ForecastTraderBot:
             selected_symbol=canonical_symbol(norm["venue"], raw_candidate.get("selected_symbol", norm["symbol"])),
             strategy_interval=norm["interval"],
             horizon_bars=norm["horizon_bars"],
+            min_hold_bars=norm["min_hold_bars"],
             neutral_bps=norm["neutral_bps"],
             confidence_pct=norm["confidence_pct"],
+            use_confidence_gate=norm["use_confidence_gate"],
+            use_expected_edge_gate=norm["use_expected_edge_gate"],
+            min_expected_bps=norm["min_expected_bps"],
             ridge_lambda=norm["ridge_lambda"],
             train_window=norm["train_window"],
             min_train_samples=norm["min_train_samples"],
@@ -964,8 +973,8 @@ class ForecastTraderBot:
                     open_side = int(open_tranche["side"])
                     entry_bar_time = int(open_tranche.get("bar_time") or (int(open_tranche["time"]) // seconds * seconds))
                     held_bars = max(1, (last_candle - entry_bar_time) // seconds) if last_candle > entry_bar_time else 0
-                    horizon = int(self.state.get("horizon_bars", 1))
-                    if held_bars >= horizon:
+                    min_hold = int(self.state.get("min_hold_bars", 1))
+                    if held_bars >= min_hold:
                         if bool(self.state.get("hold_same_direction", True)) and entry_allowed and signal_side == open_side:
                             self.state["last_action"] = f"HOLD {symbol} {'LONG' if open_side > 0 else 'SHORT'} · consecutive signal match @ {last_candle}"
                             self._save()
