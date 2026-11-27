@@ -1490,7 +1490,7 @@
         this.executionChartFrame = FrameClass.mount({
           container: frameHost,
           id: "pfChartCard",
-          title: "4H CANDLES + COMPLETED 1D TREND + PAIRED ACTUAL & PAPER TRADES",
+          title: `${this.settings.interval.toUpperCase()} CANDLES + COMPLETED 1D TREND + PAIRED ACTUAL & PAPER TRADES`,
           showAssetPane: false,
           height: 450,
           ids: {
@@ -1828,6 +1828,8 @@
 
     async refreshChart(options = {}) {
       const s = this.settings;
+      const chartTitle = document.querySelector("#pfChartPanel .executionChartTitle");
+      if (chartTitle) chartTitle.textContent = `${s.interval.toUpperCase()} CANDLES + COMPLETED 1D TREND + PAIRED ACTUAL & PAPER TRADES`;
       const chartSeq = (this._chartSeq = (this._chartSeq || 0) + 1);
       const q = new URLSearchParams({
         venue: s.venue,

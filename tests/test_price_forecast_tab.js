@@ -127,6 +127,8 @@ assert.match(source, /pfHistoryBody/,
   "Tab 11 must include Tab 4-style Historical Trades table");
 assert.match(source, /focusTradePair[\s\S]*?setVisibleRange/,
   "clicking a historical trade must move the chart to its paired entry and exit markers");
+assert.match(source, /chartTitle\.textContent = `\$\{s\.interval\.toUpperCase\(\)\} CANDLES/,
+  "the chart title must follow the selected replay interval");
 assert.match(source, /terminal-action-control/,
   "live bot buttons must integrate with fail-closed read-only lock");
 assert.doesNotMatch(source, /Enable AUTONOMOUS LIVE TRADING/,
@@ -152,6 +154,8 @@ for (const group of ["momentum", "macd", "rsi", "ma", "volatility"]) {
 
 const index = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
 assert.match(index, /id="navTabPriceForecast"/);
+assert.doesNotMatch(index, /4h Causal Ridge \+ 1d MA20/,
+  "Tab 11 navigation must not advertise a stale hard-coded daily MA period");
 assert.match(index, /id="tabContentPriceForecast"/);
 assert.match(index, /price-forecast-tab\.js/);
 assert.match(index, /activateEngineWhenReady\(\(\) => window\.priceForecastTab, isPriceForecast, "tabContentPriceForecast"\)/,
