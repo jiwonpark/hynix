@@ -38,6 +38,7 @@ class DeploymentMetadataTests(unittest.TestCase):
             self.assertIn('src="lighter-crypto-tab.js?v=v1.7.1+abc1234.20260922153000"', html)
             self.assertIn('src="lighter-micro-tab.js?v=v1.7.1+abc1234.20260922153000"', html)
             self.assertIn('src="held-pair-pnl.js?v=v1.7.1+abc1234.20260922153000"', html)
+            self.assertIn('src="price-forecast-tab.js?v=v1.7.1+abc1234.20260922153000"', html)
 
 
 if __name__ == "__main__":
