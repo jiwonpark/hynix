@@ -20,7 +20,8 @@ class MobileLayoutTests(unittest.TestCase):
         self.assertIn(".newsFilterSwitch", HTML)
 
     def test_selected_nav_is_brought_into_view(self):
-        self.assertIn('activeNav.scrollIntoView({ behavior: "smooth"', HTML)
+        self.assertIn('nav.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth"', HTML)
+        self.assertNotIn('activeNav.scrollIntoView(', HTML)
 
 
 if __name__ == "__main__":
