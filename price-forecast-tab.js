@@ -2405,10 +2405,6 @@
       try {
         if (next) {
           const cfg = this.buildBotConfigPayload();
-          const confirmed = window.confirm(
-            `Enable AUTONOMOUS LIVE TRADING on EC2?\n\nVenue: ${cfg.venue}\nSymbol: ${cfg.selected_symbol}\nCandle: ${cfg.strategy_interval} + 1d MA${cfg.daily_ma_period} filter\nSize: $${cfg.notional_usd} × ${cfg.leverage}x ($${(cfg.notional_usd * cfg.leverage).toFixed(0)} notional)\nMin Confidence: ${cfg.confidence_pct}%\n\nEvaluates on completed ${cfg.strategy_interval} bar closes.`
-          );
-          if (!confirmed) return false;
           await apiPost("/api/forecast-trader/config", cfg);
         }
         const res = await apiPost("/api/forecast-trader/toggle", { enabled: next, confirm_live_trading: next });

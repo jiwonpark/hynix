@@ -120,6 +120,10 @@ assert.match(source, /pfHistoryBody/,
   "Tab 11 must include Tab 4-style Historical Trades table");
 assert.match(source, /terminal-action-control/,
   "live bot buttons must integrate with fail-closed read-only lock");
+assert.doesNotMatch(source, /Enable AUTONOMOUS LIVE TRADING/,
+  "the authenticated Start Live Bot action must not be blocked by a redundant native dialog");
+assert.match(source, /confirm_live_trading:\s*next/,
+  "the server request must retain explicit live-trading confirmation");
 assert.match(source, /value !== null && value !== undefined && value !== ""/,
   "numeric guards must reject null indicator warm-up values");
 assert.match(source, /@media \(max-width:980px\)[\s\S]*?\.pfGrid \{ display:block; \}/,
