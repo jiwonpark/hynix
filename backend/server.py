@@ -2223,6 +2223,20 @@ async def get_forecast_trader_status() -> Dict[str, Any]:
                 account_info["error"] = "Lighter account telemetry unavailable"
         else:
             telemetry = await binance_client.get_detailed_account_telemetry()
+            if telemetry.get("authenticated") and telemetry.get("stale"):
+                # Telemetry intentionally returns the last authenticated snapshot
+                # immediately while a refresh runs in the background.  Tab 11 is
+                # the account/status surface, so wait for that in-flight refresh
+                # instead of leaving a cold load permanently labelled refreshing.
+                fresh_telemetry = await binance_client.get_detailed_account_overview()
+                if fresh_telemetry.get("authenticated"):
+                    telemetry = fresh_telemetry
+                elif fresh_telemetry.get("error"):
+                    telemetry = {
+                        **telemetry,
+                        "stale": True,
+                        "error": fresh_telemetry.get("error"),
+                    }
             if telemetry.get("authenticated"):
                 summary = telemetry.get("summary") or {}
                 positions = telemetry.get("positions") or []

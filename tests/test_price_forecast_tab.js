@@ -223,4 +223,10 @@ assert.doesNotMatch(source, /pfBtnValidatedPreset|applyValidatedEthPreset|ETH Re
 assert.match(source, /No Tab 11 setup currently passes the five-year robustness gate/,
   "the UI must disclose that current Tab 11 configurations are exploratory");
 
+const liveVerifier = fs.readFileSync(path.join(__dirname, "../scripts/verify_live_charts.mjs"), "utf8");
+assert.match(liveVerifier, /name:\s*"priceforecast"[\s\S]*?hostId:\s*"pfChartHost"/,
+  "the deployment verifier must inspect Tab 11's real chart canvases");
+assert.match(liveVerifier, /statusPayload\?\.account\?\.stale\s*!==\s*true/,
+  "Tab 11 verification must reject stale account telemetry rather than treating it as fresh");
+
 console.log(`Causal price forecast tab tests passed (V8 360x1000 replay=${replayMs}ms)`);

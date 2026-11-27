@@ -155,6 +155,7 @@ async function run() {
     { name: "crypto", navId: "navTabCrypto", hostId: "crypto_shortTermSpreadChartHost", engine: "window.cryptoEngine", series: "series", chart: "chart", data: "bars" },
     { name: "lighterCrypto", navId: "navTabLighterCrypto", hostId: "lighterCrypto_shortTermSpreadChartHost", engine: "window.lighterCryptoEngine", series: "series", chart: "chart", data: "bars" },
     { name: "lighterMicro", navId: "navTabLighterMicro", hostId: "lighterMicro_chartHost", engine: "window.lighterMicroEngine", series: "priceSeries", chart: "chart", data: "bars", micro: true },
+    { name: "priceforecast", navId: "navTabPriceForecast", contentId: "tabContentPriceForecast", hostId: "pfChartHost", engine: "window.priceForecastTab", series: "candleSeries", chart: "chart", data: "bars", forecast: true },
   ];
 
   const failures = [];
@@ -168,7 +169,7 @@ async function run() {
       let firstChartMs = null;
       let firstAccountMs = null;
       const pollStart = Date.now();
-      const pollTimeoutMs = ["lighterCrypto", "lighterMicro"].includes(t.name) ? 60000 : 45000;
+      const pollTimeoutMs = ["lighterCrypto", "lighterMicro", "priceforecast"].includes(t.name) ? 60000 : 45000;
 
       while (Date.now() - pollStart < pollTimeoutMs) {
         diag = await evaluate(`(() => {
@@ -206,9 +207,11 @@ async function run() {
           return {
             accountReady: ${t.micro
               ? "engine?.account?.success !== false && engine?.account?.authenticated === true && engine?.account?.account_stale !== true && Number.isFinite(engine?.account?.collateral) && Number.isFinite(engine?.account?.available_margin) && Array.isArray(engine?.account?.positions) && !engine?.errors?.account"
-              : "Number.isFinite(engine?.liveVenue?.collateral) && engine?.liveVenue?.authenticated === true"},
-            accountSourceTime: ${t.micro ? "engine?.account?.account_updated_ms || null" : "engine?.liveVenue?.server_time_ms || null"},
-            accountError: ${t.micro ? "engine?.errors?.account || engine?.account?.error || null" : "engine?.liveVenue?.error || null"},
+              : t.forecast
+                ? "engine?.statusPayload?.success === true && engine?.statusPayload?.account?.authenticated === true && engine?.statusPayload?.account?.stale !== true && Number.isFinite(engine?.statusPayload?.account?.equity) && Number.isFinite(engine?.statusPayload?.account?.available_margin) && Array.isArray(engine?.statusPayload?.account?.positions) && !engine?.errors?.status"
+                : "Number.isFinite(engine?.liveVenue?.collateral) && engine?.liveVenue?.authenticated === true"},
+            accountSourceTime: ${t.micro ? "engine?.account?.account_updated_ms || null" : t.forecast ? "engine?.statusPayload?.account?.updated_ms || null" : "engine?.liveVenue?.server_time_ms || null"},
+            accountError: ${t.micro ? "engine?.errors?.account || engine?.account?.error || null" : t.forecast ? "engine?.errors?.status || engine?.statusPayload?.account?.error || null" : "engine?.liveVenue?.error || null"},
             accountReadinessMs: ${t.micro ? "engine?.readiness?.accountMs ?? null" : "null"},
             chartReadinessMs: ${t.micro ? "engine?.readiness?.chartMs ?? null" : "null"},
             chartRendered: ${t.micro ? "engine?.chartRendered === true" : "null"},
@@ -221,7 +224,7 @@ async function run() {
             seriesVisible, svgVisible, price: Number.isFinite(price) ? price : null, x, y,
             pricePoints, ma7Points, ma24Points,
             tab: "${t.name}",
-            activeTabDisplay: document.getElementById("tabContent" + "${t.name.charAt(0).toUpperCase() + t.name.slice(1)}")?.style.display,
+            activeTabDisplay: document.getElementById("${t.contentId || `tabContent${t.name.charAt(0).toUpperCase() + t.name.slice(1)}`}")?.style.display,
             hostExists: !!host,
             hostWidth: host?.clientWidth,
             hostHeight: host?.clientHeight,
@@ -239,7 +242,7 @@ async function run() {
 
         if (isHealthy && firstChartMs === null) firstChartMs = Date.now() - pollStart;
         if (diag?.accountReady && firstAccountMs === null) firstAccountMs = Date.now() - pollStart;
-        if (isHealthy && (!["lighterCrypto", "lighterMicro"].includes(t.name)
+        if (isHealthy && (!["lighterCrypto", "lighterMicro", "priceforecast"].includes(t.name)
             || (diag.accountReady && (!t.micro || Number.isFinite(diag.accountReadinessMs))))) break;
         await new Promise((r) => setTimeout(r, 600));
       }
@@ -373,7 +376,7 @@ async function run() {
         if(Object.values(left.guides).some(g=>g.length))failures.push(`${t.name}: pivot guides remain after pointer leaves chart`);
         console.log('INTERACTION',JSON.stringify({tab:t.name,rangeBefore:before.range,rangeAfterHover:hovered.range,guideCounts:Object.fromEntries(Object.entries(hovered.guides).map(([k,v])=>[k,v.length])),intersectionCounts:Object.fromEntries(Object.entries(hovered.intersections).map(([k,v])=>[k,v.length])),crossingCandidate,zoomed:zoomed.range,dragged:dragged.range,linked:dragged.follower,priceSpanBefore:dragged.priceSpan,priceSpanAfter:scaled.priceSpan,cleared:Object.values(left.guides).every(g=>!g.length)}));
       }
-      if (["lighterCrypto", "lighterMicro"].includes(t.name) && !diag?.accountReady) {
+      if (["lighterCrypto", "lighterMicro", "priceforecast"].includes(t.name) && !diag?.accountReady) {
         failures.push(`Tab ${t.name}: real account data did not load`);
       }
       if (t.micro && (!Number.isFinite(diag?.accountReadinessMs) || !Number.isFinite(diag?.chartReadinessMs))) {
