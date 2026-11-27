@@ -86,6 +86,27 @@ const parsed = forecast.parseKlines(rawRows, "5m", now);
 assert.equal(parsed.length, 1, "forming or future-close candles must be excluded");
 assert.equal(parsed[0].close, 100.5);
 
+const dupRows = [
+  [1_700_000_000_000, "100", "101", "99", "100.5", "10", 1_700_000_299_000],
+  [1_700_000_000_000, "100", "101.5", "99", "100.8", "15", 1_700_000_299_000],
+];
+const deduped = forecast.parseKlines(dupRows, "5m", now);
+assert.equal(deduped.length, 1, "duplicate timestamps must be deduplicated cleanly");
+assert.equal(deduped[0].close, 100.8, "latest duplicate candle update must be retained");
+
+assert.ok(result.validation.rank_ic > 0.7, `expected strong causal rank IC on predictable sine series, got ${result.validation.rank_ic}`);
+assert.ok(result.validation.hit_rate_pct > 65, `expected strong OOS hit rate on predictable sine series, got ${result.validation.hit_rate_pct}`);
+
+const skewedResiduals = [...Array.from({ length: 45 }, (_, i) => ((i % 9) - 4) * 2.5 + 4), -200, -180, -160];
+const posProbs = forecast.probabilityFromResiduals(2.0, skewedResiduals, 8);
+const negProbs = forecast.probabilityFromResiduals(-2.0, skewedResiduals, 8);
+assert.ok(posProbs.up > posProbs.down, "positive expected move must yield P(up) > P(down) despite crash tail skew");
+assert.ok(negProbs.down > negProbs.up, "negative expected move must yield P(down) > P(up) despite crash tail skew");
+
+const kstMidnightEpoch = Date.UTC(2023, 10, 15, 15, 0, 0) / 1000; // 2023-11-16 00:00:00 KST
+assert.equal(forecast.formatKstTick(kstMidnightEpoch, 3), "11-16", "chart tick formatter must format UTC+9 KST midnight as date boundary");
+assert.equal(forecast.formatKstTick(kstMidnightEpoch + 3600, 3), "01:00", "chart tick formatter must render KST HH:MM rather than UTC");
+
 const source = fs.readFileSync(modulePath, "utf8");
 assert.match(source, /RESEARCH ONLY · NO ORDERS/,
   "forecast tab must not imply that model output is live execution");
@@ -97,6 +118,17 @@ assert.match(source, /value !== null && value !== undefined && value !== ""/,
   "numeric guards must reject null indicator warm-up values");
 assert.match(source, /@media \(max-width:900px\)[\s\S]*?\.pfGrid \{ display:block; \}/,
   "the forecast chart must collapse to a true single-column mobile layout");
+assert.match(source, /localization:\s*\{\s*locale:\s*"ko-KR",\s*timeFormatter:/,
+  "forecast chart must enable KST timeFormatter localization");
+assert.match(source, /tickMarkFormatter:\s*\(time,\s*tickMarkType\)\s*=>\s*formatKstTick/,
+  "forecast chart timeScale must format tick marks in KST");
+assert.match(source, /text-transform:none;">σ<\/i>/,
+  "Residual σ label must keep lowercase sigma rather than uppercasing to Σ");
+assert.match(source, /loadedMarket/,
+  "forecast controller must isolate loadedMarket from unvalidated symbol/interval edits");
+assert.match(source, /directFailUntil/,
+  "forecast loader must apply proxy cooldown after direct fapi failures");
+
 const featureMarkup = forecast.featureRowsMarkup(settings);
 for (const group of ["momentum", "macd", "rsi", "ma", "volatility"]) {
   assert.match(featureMarkup, new RegExp(`id="pfUse_${group}"`),

@@ -5,7 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const STORAGE_KEY = "skhynix_price_forecast_settings_v1";
+  const STORAGE_KEY = "skhynix_price_forecast_settings_v2";
   const INTERVAL_SECONDS = { "5m": 300, "15m": 900, "1h": 3600, "4h": 14400 };
   const FEATURE_GROUPS = ["momentum", "macd", "rsi", "ma", "volatility"];
 
@@ -15,8 +15,8 @@
     horizon_bars: 1,
     neutral_bps: 8,
     confidence_pct: 45,
-    ridge_lambda: 1,
-    train_window: 500,
+    ridge_lambda: 400,
+    train_window: 1000,
     min_train_samples: 180,
     cost_bps: 10,
     momentum_lookback: 6,
@@ -38,6 +38,12 @@
   const clamp = (value, low, high) => Math.min(high, Math.max(low, Number(value)));
   const finite = (value) => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
   const mean = (values) => values.length ? values.reduce((sum, value) => sum + Number(value), 0) / values.length : 0;
+  const median = (values) => {
+    if (!values.length) return 0;
+    const sorted = values.slice().sort((left, right) => Number(left) - Number(right));
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? Number(sorted[mid]) : (Number(sorted[mid - 1]) + Number(sorted[mid])) / 2;
+  };
   const stdev = (values) => {
     if (values.length < 2) return 0;
     const avg = mean(values);
@@ -48,12 +54,39 @@
     return finite(value) ? Number(value).toFixed(digits) : fallback;
   }
 
+  const KST_TIME_ZONE = "Asia/Seoul";
+  const KST_FULL_SEC_FMT = new Intl.DateTimeFormat("en-CA", {
+    timeZone: KST_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  });
+  const KST_DATE_FMT = new Intl.DateTimeFormat("en-CA", {
+    timeZone: KST_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
+  });
+  const KST_MD_FMT = new Intl.DateTimeFormat("en-CA", {
+    timeZone: KST_TIME_ZONE, month: "2-digit", day: "2-digit",
+  });
+  const KST_HMS_FMT = new Intl.DateTimeFormat("en-GB", {
+    timeZone: KST_TIME_ZONE, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  });
+  const KST_HM_FMT = new Intl.DateTimeFormat("en-GB", {
+    timeZone: KST_TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  });
+
   function formatKst(epochSeconds) {
     if (!finite(epochSeconds)) return "—";
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
-    }).format(new Date(Number(epochSeconds) * 1000)).replace(",", "") + " KST";
+    return KST_FULL_SEC_FMT.format(new Date(Number(epochSeconds) * 1000)).replace(",", "") + " KST";
+  }
+
+  function formatKstTick(epochSeconds, tickMarkType) {
+    if (!finite(epochSeconds)) return "";
+    const numTime = Number(epochSeconds);
+    const date = new Date(numTime * 1000);
+    if (Number.isNaN(date.getTime())) return "";
+    if (tickMarkType === 4) return KST_HMS_FMT.format(date);
+    const kstSecOfDay = ((Math.floor(numTime) + 32400) % 86400 + 86400) % 86400;
+    if (kstSecOfDay === 0) return tickMarkType === 0 ? KST_DATE_FMT.format(date) : KST_MD_FMT.format(date);
+    if (tickMarkType === 0 || tickMarkType === 1 || tickMarkType === 2) return `${KST_MD_FMT.format(date)} ${KST_HM_FMT.format(date)}`;
+    return KST_HM_FMT.format(date);
   }
 
   function simpleMovingAverage(values, period) {
@@ -190,6 +223,8 @@
     const rideHangState = crossedUnder && risingMa ? 1 : (crossedOver && fallingMa ? -1 : 0);
     const atrPct = (atrValue / close) * 100;
     const volatilityBps = Number(returnVolatility[index]);
+    const barRange = Number(bars[index].high) - Number(bars[index].low);
+    const candleClv = barRange > 0 ? ((2 * close - Number(bars[index].high) - Number(bars[index].low)) / barRange) : 0;
 
     if (settings.use_momentum) {
       add("return_1_bps", oneBarBps);
@@ -214,6 +249,7 @@
       add("atr_pct", atrPct);
       add("return_volatility_bps", volatilityBps);
       add("candle_body_atr", (Number(bars[index].close) - Number(bars[index].open)) / atrDenominator);
+      add("candle_clv", candleClv);
     }
     if (!values.length || values.some((value) => !finite(value))) return null;
     return {
@@ -234,8 +270,19 @@
         ma_ride_hang: rideHangState,
         atr_pct: atrPct,
         volatility_bps: volatilityBps,
+        candle_clv: candleClv,
       },
     };
+  }
+
+  function localVolatilityScaleBps(bars, indicators, settings, index) {
+    const close = Number(bars[index]?.close || 0);
+    if (!(close > 0)) return 10;
+    const atr = indicators?.atr?.[index];
+    const atrBps = finite(atr) && atr > 0 ? (Number(atr) / close) * 10000 : 20;
+    const rv = indicators?.returnVolatility?.[index];
+    const perBar = Math.max(2, finite(rv) && rv > 0 ? (0.55 * Number(rv) + 0.45 * atrBps * 0.72) : atrBps * 0.75);
+    return perBar * Math.sqrt(Math.max(1, Number(settings?.horizon_bars || 1)));
   }
 
   function buildFeatureRows(bars, settings) {
@@ -268,44 +315,172 @@
     return augmented.map((row) => row[size]);
   }
 
-  function fitRidge(samples, lambda) {
+  function fitRidge(samples, lambda, options = {}) {
     if (!samples.length || !samples[0]?.x?.length) return null;
+    const n = samples.length;
     const width = samples[0].x.length;
-    const means = new Array(width).fill(0).map((_, column) => mean(samples.map((sample) => sample.x[column])));
-    const scales = new Array(width).fill(0).map((_, column) => Math.max(1e-9, stdev(samples.map((sample) => sample.x[column]))));
-    const yMean = mean(samples.map((sample) => sample.y));
+    const means = new Array(width).fill(0);
+    const scales = new Array(width).fill(0);
+    for (let i = 0; i < n; i += 1) {
+      const xi = samples[i].x;
+      for (let column = 0; column < width; column += 1) means[column] += Number(xi[column]);
+    }
+    for (let column = 0; column < width; column += 1) means[column] /= n;
+    for (let i = 0; i < n; i += 1) {
+      const xi = samples[i].x;
+      for (let column = 0; column < width; column += 1) {
+        const diff = Number(xi[column]) - means[column];
+        scales[column] += diff * diff;
+      }
+    }
+    for (let column = 0; column < width; column += 1) {
+      scales[column] = Math.max(1e-9, Math.sqrt(scales[column] / Math.max(1, n - 1)));
+    }
+
+    const lamInput = Math.max(0, Number(lambda));
+    const volScaled = finite(samples[0]?.scale) && Number(samples[0].scale) > 0;
+    if (volScaled) return fitRidgeVolScaled(samples, lamInput, means, scales, options);
+
     const xtx = Array.from({ length: width }, () => new Array(width).fill(0));
     const xty = new Array(width).fill(0);
-    samples.forEach((sample) => {
-      const standardized = sample.x.map((value, column) => (Number(value) - means[column]) / scales[column]);
-      const centeredY = Number(sample.y) - yMean;
+    const yMean = mean(samples.map((sample) => sample.y));
+    for (let i = 0; i < n; i += 1) {
+      const xi = samples[i].x;
+      const centeredY = Number(samples[i].y) - yMean;
       for (let row = 0; row < width; row += 1) {
-        xty[row] += standardized[row] * centeredY;
-        for (let column = 0; column < width; column += 1) xtx[row][column] += standardized[row] * standardized[column];
+        const zRow = (Number(xi[row]) - means[row]) / scales[row];
+        xty[row] += zRow * centeredY;
+        for (let column = row; column < width; column += 1) {
+          const zCol = (Number(xi[column]) - means[column]) / scales[column];
+          const prod = zRow * zCol;
+          xtx[row][column] += prod;
+          if (column !== row) xtx[column][row] += prod;
+        }
       }
-    });
-    for (let column = 0; column < width; column += 1) xtx[column][column] += Math.max(0, Number(lambda));
+    }
+    for (let column = 0; column < width; column += 1) xtx[column][column] += lamInput;
     const weights = solveLinearSystem(xtx, xty);
-    const model = { means, scales, yMean, weights, residuals: [], sample_count: samples.length };
+    const model = { means, scales, yMean, weights, amplitude: 1, tanhPredict: false, residuals: [], normResiduals: null, sample_count: n };
     model.residuals = samples.map((sample) => Number(sample.y) - predictRidge(model, sample.x));
     return model;
   }
 
-  function predictRidge(model, values) {
-    if (!model || !Array.isArray(values) || values.length !== model.weights.length) return null;
-    return model.yMean + values.reduce((sum, value, index) => (
-      sum + model.weights[index] * ((Number(value) - model.means[index]) / model.scales[index])
-    ), 0);
+  function fitRidgeVolScaled(samples, lamInput, means, scales, options = {}) {
+    const n = samples.length;
+    const width = means.length;
+    const targetK = 0.8;
+    const zFlat = new Float64Array(n * width);
+    const yNorm = new Float64Array(n);
+    const xtx = Array.from({ length: width }, () => new Array(width).fill(0));
+    const xty = new Array(width).fill(0);
+    const lamEff = lamInput * (n / 500);
+    const offDiagKeep = 1 - clamp(lamInput / (lamInput + 45), 0, 0.90);
+
+    for (let i = 0; i < n; i += 1) {
+      const xi = samples[i].x;
+      const base = i * width;
+      for (let column = 0; column < width; column += 1) {
+        zFlat[base + column] = Math.tanh(((Number(xi[column]) - means[column]) / scales[column]) / 2) * 2;
+      }
+      const yn = Number(samples[i].y) / Math.max(2, Number(samples[i].scale));
+      yNorm[i] = yn;
+      const yTanh = Math.tanh(yn / targetK);
+      for (let row = 0; row < width; row += 1) {
+        const zr = zFlat[base + row];
+        xty[row] += zr * yTanh;
+        xtx[row][row] += zr * zr;
+        for (let column = row + 1; column < width; column += 1) xtx[row][column] += zr * zFlat[base + column];
+      }
+    }
+    for (let row = 0; row < width; row += 1) {
+      xtx[row][row] += lamEff;
+      for (let column = row + 1; column < width; column += 1) {
+        const val = xtx[row][column] * offDiagKeep;
+        xtx[row][column] = val;
+        xtx[column][row] = val;
+      }
+    }
+    const weights = solveLinearSystem(xtx, xty);
+
+    let num = 0;
+    let den = 0;
+    const trainScores = new Float64Array(n);
+    for (let i = 0; i < n; i += 1) {
+      const base = i * width;
+      let score = 0;
+      for (let column = 0; column < width; column += 1) score += zFlat[base + column] * weights[column];
+      trainScores[i] = score;
+      const clippedY = clamp(yNorm[i], -2.5, 2.5);
+      num += score * clippedY;
+      den += score * score;
+    }
+    const ampRaw = den > 1e-9 ? num / den : targetK;
+    const amplitude = clamp(ampRaw > 0 ? ampRaw : targetK, 0.25, 2.5);
+    const normResiduals = new Float64Array(n);
+    for (let i = 0; i < n; i += 1) normResiduals[i] = yNorm[i] - trainScores[i] * amplitude;
+    const sortedNorm = Float64Array.from(normResiduals).sort();
+    const mid = n >> 1;
+    const normCenter = n % 2 ? sortedNorm[mid] : (sortedNorm[mid - 1] + sortedNorm[mid]) / 2;
+    let normMean = 0;
+    for (let i = 0; i < n; i += 1) normMean += normResiduals[i];
+    normMean /= n;
+    let normVar = 0;
+    for (let i = 0; i < n; i += 1) {
+      const diff = normResiduals[i] - normMean;
+      normVar += diff * diff;
+    }
+    const normSigma = n > 1 ? Math.sqrt(normVar / (n - 1)) : 0;
+
+    const residuals = options.skipLegacyResiduals
+      ? null
+      : Array.from(normResiduals, (value, i) => value * Number(samples[i].scale));
+
+    return {
+      means,
+      scales,
+      yMean: 0,
+      weights,
+      amplitude,
+      tanhPredict: true,
+      residuals,
+      normResiduals,
+      normCenter,
+      normSigma,
+      sample_count: n,
+    };
   }
 
-  function probabilityFromResiduals(expectedBps, residuals, neutralBps) {
+  function predictRidge(model, values, targetScale = null) {
+    if (!model || !Array.isArray(values) || values.length !== model.weights.length) return null;
+    let sum = model.yMean;
+    for (let index = 0; index < values.length; index += 1) {
+      const z = (Number(values[index]) - model.means[index]) / model.scales[index];
+      const normalized = model.tanhPredict ? Math.tanh(z / 2) * 2 : z;
+      sum += model.weights[index] * normalized;
+    }
+    const predicted = sum * (model.amplitude ?? 1);
+    return (model.normResiduals && finite(targetScale) && Number(targetScale) > 0)
+      ? predicted * Number(targetScale)
+      : predicted;
+  }
+
+  function probabilityFromResiduals(expectedBps, residuals, neutralBps, knownCenter = null, scaleFactor = 1) {
     const counts = { up: 1, neutral: 1, down: 1 };
-    residuals.forEach((residual) => {
-      const possible = Number(expectedBps) + Number(residual);
-      if (possible > neutralBps) counts.up += 1;
-      else if (possible < -neutralBps) counts.down += 1;
-      else counts.neutral += 1;
-    });
+    const s = Number(scaleFactor) || 1;
+    const center = knownCenter !== null && finite(knownCenter) ? Number(knownCenter) : median(residuals) * s;
+    const expected = Number(expectedBps);
+    const band = Number(neutralBps);
+    for (let index = 0; index < residuals.length; index += 1) {
+      const centered = Number(residuals[index]) * s - center;
+      const plus = expected + centered;
+      const minus = expected - centered;
+      if (plus > band) counts.up += 0.5;
+      else if (plus < -band) counts.down += 0.5;
+      else counts.neutral += 0.5;
+      if (minus > band) counts.up += 0.5;
+      else if (minus < -band) counts.down += 0.5;
+      else counts.neutral += 0.5;
+    }
     const total = counts.up + counts.neutral + counts.down;
     return {
       up: counts.up / total,
@@ -315,9 +490,9 @@
   }
 
   function classify(probabilities) {
-    return ["up", "neutral", "down"].reduce((best, key) => (
+    return ["neutral", "up", "down"].reduce((best, key) => (
       probabilities[key] > probabilities[best] ? key : best
-    ), "up");
+    ), "neutral");
   }
 
   function realizedClass(returnBps, neutralBps) {
@@ -326,7 +501,8 @@
     return "neutral";
   }
 
-  function makeSamples(bars, featureRows, settings) {
+  function makeSamples(bars, featureRows, settings, indicators = null) {
+    const resolvedIndicators = indicators || calculateIndicators(bars, settings);
     const samples = [];
     const horizon = settings.horizon_bars;
     featureRows.forEach((row, index) => {
@@ -340,6 +516,7 @@
         targetIndex,
         x: row.values,
         y: Math.log(targetClose / sourceClose) * 10000,
+        scale: localVolatilityScaleBps(bars, resolvedIndicators, settings, index),
       });
     });
     return samples;
@@ -376,18 +553,15 @@
     return leftSq > 0 && rightSq > 0 ? numerator / Math.sqrt(leftSq * rightSq) : null;
   }
 
-  function forecastAtIndex(bars, rawSettings, sourceIndex) {
-    const settings = normalizeSettings(rawSettings);
-    const { rows } = buildFeatureRows(bars, settings);
-    const row = rows[sourceIndex];
-    if (!row) return null;
-    const samples = makeSamples(bars, rows, settings)
-      .filter((sample) => sample.targetIndex <= sourceIndex)
-      .slice(-settings.train_window);
-    if (samples.length < settings.min_train_samples) return null;
-    const model = fitRidge(samples, settings.ridge_lambda);
-    const expectedBps = predictRidge(model, row.values);
-    const probabilities = probabilityFromResiduals(expectedBps, model.residuals, settings.neutral_bps);
+  function forecastStepFromEligible(bars, indicators, row, eligible, settings, sourceIndex) {
+    if (!row || !eligible || eligible.length < settings.min_train_samples) return null;
+    const model = fitRidge(eligible, settings.ridge_lambda, { skipLegacyResiduals: true });
+    const sourceScale = localVolatilityScaleBps(bars, indicators, settings, sourceIndex);
+    const expectedBps = predictRidge(model, row.values, sourceScale);
+    const useScaled = Boolean(model.normResiduals && finite(sourceScale) && sourceScale > 0);
+    const probabilities = useScaled
+      ? probabilityFromResiduals(expectedBps, model.normResiduals, settings.neutral_bps, model.normCenter * sourceScale, sourceScale)
+      : probabilityFromResiduals(expectedBps, model.residuals, settings.neutral_bps);
     const direction = classify(probabilities);
     const confidence = probabilities[direction];
     return {
@@ -398,11 +572,22 @@
       direction,
       confidence,
       qualified: confidence * 100 >= settings.confidence_pct,
-      train_samples: samples.length,
-      residual_sigma_bps: stdev(model.residuals),
+      train_samples: eligible.length,
+      residual_sigma_bps: useScaled ? model.normSigma * sourceScale : stdev(model.residuals),
       feature_names: row.names,
       feature_metrics: row.metrics,
     };
+  }
+
+  function forecastAtIndex(bars, rawSettings, sourceIndex) {
+    const settings = normalizeSettings(rawSettings);
+    const { indicators, rows } = buildFeatureRows(bars, settings);
+    const row = rows[sourceIndex];
+    if (!row) return null;
+    const eligible = makeSamples(bars, rows, settings, indicators)
+      .filter((sample) => sample.targetIndex <= sourceIndex)
+      .slice(-settings.train_window);
+    return forecastStepFromEligible(bars, indicators, row, eligible, settings, sourceIndex);
   }
 
   function normalizeSettings(raw = {}) {
@@ -445,10 +630,15 @@
     }
 
     const { indicators, rows } = buildFeatureRows(bars, settings);
-    const samples = makeSamples(bars, rows, settings);
+    const samples = makeSamples(bars, rows, settings, indicators);
     const validSourceIndices = rows.map((row, index) => row ? index : null).filter((index) => index !== null);
     const latestIndex = validSourceIndices[validSourceIndices.length - 1];
-    const latest = forecastAtIndex(bars, settings, latestIndex);
+    const latestEligible = latestIndex === undefined
+      ? []
+      : samples.filter((sample) => sample.targetIndex <= latestIndex).slice(-settings.train_window);
+    const latest = latestIndex === undefined
+      ? null
+      : forecastStepFromEligible(bars, indicators, rows[latestIndex], latestEligible, settings, latestIndex);
     if (!latest) return empty("Not enough matured causal samples for the selected training window.");
 
     const earliestValidationIndex = Math.max(
@@ -464,22 +654,18 @@
     let brierSum = 0;
     let netBps = 0;
     let directionalQualified = 0;
+    let sampleCursor = 0;
 
     for (let sourceIndex = earliestValidationIndex; sourceIndex < bars.length - settings.horizon_bars; sourceIndex += 1) {
       if (!rows[sourceIndex]) continue;
-      const eligible = samples
-        .filter((sample) => sample.targetIndex <= sourceIndex)
-        .slice(-settings.train_window);
-      if (eligible.length < settings.min_train_samples) continue;
-      const model = fitRidge(eligible, settings.ridge_lambda);
-      const expectedBps = predictRidge(model, rows[sourceIndex].values);
-      const probabilities = probabilityFromResiduals(expectedBps, model.residuals, settings.neutral_bps);
-      const direction = classify(probabilities);
-      const confidence = probabilities[direction];
+      while (sampleCursor < samples.length && samples[sampleCursor].targetIndex <= sourceIndex) sampleCursor += 1;
+      const eligible = samples.slice(Math.max(0, sampleCursor - settings.train_window), sampleCursor);
+      const step = forecastStepFromEligible(bars, indicators, rows[sourceIndex], eligible, settings, sourceIndex);
+      if (!step) continue;
+      const { expected_bps: expectedBps, probabilities, direction, confidence, qualified: isQualified } = step;
       const targetIndex = sourceIndex + settings.horizon_bars;
       const actualBps = Math.log(Number(bars[targetIndex].close) / Number(bars[sourceIndex].close)) * 10000;
       const actualDirection = realizedClass(actualBps, settings.neutral_bps);
-      const isQualified = confidence * 100 >= settings.confidence_pct;
       const oneHot = { up: actualDirection === "up" ? 1 : 0, neutral: actualDirection === "neutral" ? 1 : 0, down: actualDirection === "down" ? 1 : 0 };
       brierSum += ((probabilities.up - oneHot.up) ** 2 + (probabilities.neutral - oneHot.neutral) ** 2 + (probabilities.down - oneHot.down) ** 2) / 3;
       expectedValues.push(expectedBps);
@@ -523,14 +709,26 @@
   function parseKlines(rows, interval, nowSeconds = Date.now() / 1000) {
     const intervalSeconds = INTERVAL_SECONDS[interval] || 300;
     if (!Array.isArray(rows)) return [];
-    return rows.map((row) => ({
-      time: Math.floor(Number(row[0]) / 1000),
-      close_time: finite(row[6]) ? Math.floor(Number(row[6]) / 1000) : Math.floor(Number(row[0]) / 1000) + intervalSeconds,
-      open: Number(row[1]), high: Number(row[2]), low: Number(row[3]), close: Number(row[4]), volume: Number(row[5] || 0),
-    })).filter((bar) => (
-      finite(bar.time) && finite(bar.open) && finite(bar.high) && finite(bar.low) && finite(bar.close)
-      && bar.close_time <= nowSeconds
-    )).sort((left, right) => left.time - right.time);
+    const deduped = new Map();
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      const bar = {
+        time: Math.floor(Number(row[0]) / 1000),
+        close_time: finite(row[6]) ? Math.floor(Number(row[6]) / 1000) : Math.floor(Number(row[0]) / 1000) + intervalSeconds,
+        open: Number(row[1]),
+        high: Number(row[2]),
+        low: Number(row[3]),
+        close: Number(row[4]),
+        volume: Number(row[5] || 0),
+      };
+      if (
+        finite(bar.time) && finite(bar.open) && finite(bar.high) && finite(bar.low) && finite(bar.close)
+        && bar.close_time <= nowSeconds
+      ) {
+        deduped.set(bar.time, bar);
+      }
+    }
+    return Array.from(deduped.values()).sort((left, right) => left.time - right.time);
   }
 
   class PriceForecastTab {
@@ -539,6 +737,7 @@
       this.loaded = false;
       this.active = false;
       this.settings = this.loadSettings();
+      this.loadedMarket = null;
       this.bars = [];
       this.result = null;
       this.chart = null;
@@ -548,6 +747,8 @@
       this.requestSequence = 0;
       this.loading = false;
       this.lastLoadedAt = 0;
+      this.directFailUntil = 0;
+      this.pendingFit = false;
       this.pollTimer = null;
       this.resizeObserver = null;
     }
@@ -568,6 +769,8 @@
       const container = document.getElementById(containerId);
       if (!container) return;
       this.renderSkeleton(container);
+      globalThis.collapsibleSectionsManager?.ensureCollapseButtons?.(container);
+      globalThis.collapsibleSectionsManager?.restoreStates?.();
       this.bindControls();
       this.initChart();
       this.mounted = true;
@@ -659,7 +862,7 @@
               </div>
               <div class="pfKpis" style="grid-template-columns:repeat(2,minmax(0,1fr));">
                 <div class="pfKpi"><span>Expected move</span><strong id="pfExpected">—</strong></div>
-                <div class="pfKpi"><span>Residual σ</span><strong id="pfSigma">—</strong></div>
+                <div class="pfKpi"><span>Residual <i style="font-style:normal;text-transform:none;">σ</i></span><strong id="pfSigma">—</strong></div>
               </div>
               <div id="pfForecastSource" class="pfStatus">Source: awaiting a completed candle.</div>
             </section>
@@ -712,9 +915,18 @@
       this.chart = globalThis.LightweightCharts.createChart(host, {
         width: Math.max(320, host.clientWidth), height: Math.max(320, host.clientHeight),
         layout: { background: { color: "#ffffff" }, textColor: "#475569", fontSize: 11 },
+        localization: { locale: "ko-KR", timeFormatter: (time) => formatKst(time) },
         grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
         rightPriceScale: { borderColor: "#e2e8f0", scaleMargins: { top: 0.08, bottom: 0.12 } },
-        timeScale: { borderColor: "#e2e8f0", timeVisible: true, secondsVisible: false, rightOffset: 5, barSpacing: 7 },
+        timeScale: {
+          borderColor: "#e2e8f0",
+          timeVisible: true,
+          secondsVisible: false,
+          rightOffset: 5,
+          barSpacing: 7,
+          lockVisibleTimeRangeOnResize: true,
+          tickMarkFormatter: (time, tickMarkType) => formatKstTick(time, tickMarkType),
+        },
         crosshair: { mode: globalThis.LightweightCharts.CrosshairMode?.Normal ?? 0 },
       });
       this.candleSeries = this.chart.addCandlestickSeries({
@@ -760,20 +972,31 @@
     }
 
     rerunFromControls() {
-      this.settings = this.readControls();
+      const next = this.readControls();
+      if (!this.bars.length) {
+        this.settings = next;
+        this.saveSettings();
+        this.syncFeatureStates();
+        return;
+      }
+      if (this.loadedMarket && (next.symbol !== this.loadedMarket.symbol || next.interval !== this.loadedMarket.interval)) {
+        this.refreshFromMarketControls();
+        return;
+      }
+      this.settings = next;
       this.saveSettings();
       this.syncFeatureStates();
-      if (!this.bars.length) return;
       this.setStatus("Refitting causal ridge model…");
       setTimeout(() => {
         this.result = buildCausalForecast(this.bars, this.settings);
         this.renderResult({ fit: false });
+        if (!this.result.error) {
+          this.setStatus(`${this.bars.length.toLocaleString()} completed candles · model refitted · latest source ${formatKst(this.bars[this.bars.length - 1].close_time)}`);
+        }
       }, 0);
     }
 
     refreshFromMarketControls() {
-      this.settings = this.readControls();
-      this.saveSettings();
       this.refresh({ fit: true, force: true });
     }
 
@@ -800,19 +1023,26 @@
       const origin = location?.origin && location.origin !== "null" ? location.origin : "";
       const proxyUrl = origin ? `${origin}${path}?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=1500` : "";
       const directUrl = `https://fapi.binance.com/fapi/v1/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=1500`;
-      const candidates = [directUrl, proxyUrl].filter(Boolean);
+      const directFirst = Date.now() >= (this.directFailUntil || 0);
+      const candidates = (directFirst ? [directUrl, proxyUrl] : [proxyUrl, directUrl]).filter(Boolean);
       let lastError = null;
       for (const url of candidates) {
         const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
         const timeout = setTimeout(() => controller?.abort(), url === proxyUrl ? 15000 : 3500);
         try {
           const response = await fetch(url, controller ? { signal: controller.signal } : undefined);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          if (!response.ok) {
+            const httpErr = new Error(`HTTP ${response.status}`);
+            if (response.status >= 400 && response.status < 500 && url === proxyUrl && !directFirst) throw httpErr;
+            throw httpErr;
+          }
           const rows = await response.json();
           if (!Array.isArray(rows) || !rows.length) throw new Error("No candles returned");
           return rows;
         } catch (error) {
           lastError = error;
+          if (url === directUrl) this.directFailUntil = Date.now() + 60000;
+          if (url === proxyUrl && !directFirst && /HTTP 4\d\d/.test(error?.message || "")) throw error;
         } finally {
           clearTimeout(timeout);
         }
@@ -822,39 +1052,49 @@
 
     async refresh(options = {}) {
       if (!this.mounted) return;
-      this.settings = this.readControls();
-      this.saveSettings();
+      const requested = this.readControls();
+      const sameMarket = Boolean(
+        this.loadedMarket
+        && this.loadedMarket.symbol === requested.symbol
+        && this.loadedMarket.interval === requested.interval
+      );
       const sequence = ++this.requestSequence;
       this.loading = true;
       const startedAt = performance.now ? performance.now() : Date.now();
-      this.setStatus(`Loading completed ${this.settings.interval} ${this.settings.symbol} candles…`);
+      this.setStatus(`Loading completed ${requested.interval} ${requested.symbol} candles…`);
       document.getElementById("pfRefresh")?.setAttribute("disabled", "disabled");
       try {
-        const rows = await this.fetchRows(this.settings.symbol, this.settings.interval);
+        const rows = await this.fetchRows(requested.symbol, requested.interval);
         if (sequence !== this.requestSequence) return;
-        const bars = parseKlines(rows, this.settings.interval);
+        const bars = parseKlines(rows, requested.interval);
+        if (!bars.length) throw new Error("No completed candles are available.");
         const previousLatestClose = this.bars.length ? Number(this.bars[this.bars.length - 1].close_time) : null;
-        const nextLatestClose = bars.length ? Number(bars[bars.length - 1].close_time) : null;
-        if (!options.force && this.result && !this.result.error && previousLatestClose === nextLatestClose) {
+        const nextLatestClose = Number(bars[bars.length - 1].close_time);
+        if (sameMarket && !options.force && this.result && !this.result.error && previousLatestClose === nextLatestClose) {
+          this.settings = requested;
+          this.saveSettings();
           this.lastLoadedAt = Date.now();
           const elapsed = ((performance.now ? performance.now() : Date.now()) - startedAt) / 1000;
           this.setStatus(`${this.bars.length.toLocaleString()} completed candles · checked in ${elapsed.toFixed(2)}s · no newer completed candle · source ${formatKst(previousLatestClose)}`);
           return;
         }
-        const result = buildCausalForecast(bars, this.settings);
-        if (!bars.length) throw new Error("No completed candles are available.");
+        const result = buildCausalForecast(bars, requested);
+        this.settings = requested;
+        this.loadedMarket = { symbol: requested.symbol, interval: requested.interval };
+        this.saveSettings();
         this.bars = bars;
         this.result = result;
         this.lastLoadedAt = Date.now();
         this.loaded = !result.error;
-        this.renderResult({ fit: options.fit !== false });
+        this.renderResult({ fit: options.fit !== false || !sameMarket });
         window.updateMainTabLoading?.("priceforecast");
         const elapsed = ((performance.now ? performance.now() : Date.now()) - startedAt) / 1000;
         if (!result.error) this.setStatus(`${bars.length.toLocaleString()} completed candles · chart + forecast usable in ${elapsed.toFixed(2)}s · latest source ${formatKst(bars[bars.length - 1].close_time)}`);
       } catch (error) {
         if (sequence !== this.requestSequence) return;
         this.loaded = Boolean(this.result && !this.result.error);
-        this.setStatus(`Forecast unavailable: ${error.message}. Use Refresh to retry; prior valid output remains unchanged.`, true);
+        const priorLabel = this.loadedMarket ? `prior ${this.loadedMarket.symbol} · ${this.loadedMarket.interval}` : "prior";
+        this.setStatus(`Forecast unavailable for ${requested.symbol} · ${requested.interval}: ${error.message}. Use Refresh to retry; ${priorLabel} output remains unchanged.`, true);
       } finally {
         if (sequence === this.requestSequence) {
           this.loading = false;
@@ -865,9 +1105,10 @@
 
     renderResult(options = {}) {
       const result = this.result;
+      const market = this.loadedMarket || this.settings;
       const title = document.getElementById("pfChartTitle");
       const subtitle = document.getElementById("pfChartSubtitle");
-      if (title) title.textContent = `${this.settings.symbol} · ${this.settings.interval}`;
+      if (title) title.textContent = `${market.symbol} · ${market.interval}`;
       if (subtitle) subtitle.textContent = `${this.settings.horizon_bars} bar horizon · completed candles only · forming candle excluded`;
       this.syncFeatureStates();
       if (!result || result.error) {
@@ -916,7 +1157,15 @@
       });
       markers.sort((left, right) => Number(left.time) - Number(right.time));
       this.candleSeries.setMarkers(markers);
-      if (fit) this.chart?.timeScale()?.fitContent();
+      const host = document.getElementById("pfChartHost");
+      if (fit) {
+        if (host && host.clientWidth > 0 && host.clientHeight > 0) {
+          this.chart?.timeScale()?.fitContent();
+          this.pendingFit = false;
+        } else {
+          this.pendingFit = true;
+        }
+      }
     }
 
     renderLatest() {
@@ -932,7 +1181,8 @@
         badge.textContent = `${latest.direction.toUpperCase()} · ${latest.qualified ? "QUALIFIED" : "LOW CONFIDENCE"}`;
         badge.className = `pfState${latest.qualified ? "" : " off"}`;
       }
-      const intervalSeconds = INTERVAL_SECONDS[this.settings.interval];
+      const market = this.loadedMarket || this.settings;
+      const intervalSeconds = INTERVAL_SECONDS[market.interval];
       const sourceClose = latest.source_time + intervalSeconds;
       const targetClose = sourceClose + intervalSeconds * this.settings.horizon_bars;
       const source = document.getElementById("pfForecastSource");
@@ -941,12 +1191,13 @@
 
     renderFeatureValues() {
       const metrics = this.result.latest.feature_metrics;
+      const market = this.loadedMarket || this.settings;
       const values = {
         momentum: `1-bar ${metrics.one_bar_bps >= 0 ? "+" : ""}${formatNumber(metrics.one_bar_bps, 1)} bp · lookback ${metrics.lookback_bps >= 0 ? "+" : ""}${formatNumber(metrics.lookback_bps, 1)} bp`,
         macd: `H ${formatNumber(metrics.macd_hist_atr, 3)} ATR · Δ ${formatNumber(metrics.macd_hist_diff_atr, 3)}`,
         rsi: `${formatNumber(metrics.rsi, 1)} · Δ ${metrics.rsi_delta >= 0 ? "+" : ""}${formatNumber(metrics.rsi_delta, 1)}`,
         ma: `price ${metrics.ma_distance_atr >= 0 ? "+" : ""}${formatNumber(metrics.ma_distance_atr, 2)} ATR · slope ${metrics.ma_slope_atr >= 0 ? "+" : ""}${formatNumber(metrics.ma_slope_atr, 2)} · ${metrics.ma_ride_hang > 0 ? "RIDE" : metrics.ma_ride_hang < 0 ? "HANG" : "NO CROSS"}`,
-        volatility: `ATR ${formatNumber(metrics.atr_pct, 3)}% · σ ${formatNumber(metrics.volatility_bps, 1)} bp`,
+        volatility: `ATR ${formatNumber(metrics.atr_pct, 3)}% · σ ${formatNumber(metrics.volatility_bps, 1)} bp · CLV ${metrics.candle_clv >= 0 ? "+" : ""}${formatNumber(metrics.candle_clv, 2)}`,
       };
       FEATURE_GROUPS.forEach((group) => {
         const node = document.getElementById(`pfValue_${group}`);
@@ -954,11 +1205,12 @@
       });
       const inputSource = document.getElementById("pfInputSource");
       const bar = this.bars[this.result.latest.source_index];
-      if (inputSource && bar) inputSource.textContent = `Source: Binance futures completed ${this.settings.interval} candle · ${formatKst(bar.close_time)} · ${this.result.latest.feature_names.length} active numeric inputs`;
+      if (inputSource && bar) inputSource.textContent = `Source: Binance futures completed ${market.interval} candle · ${formatKst(bar.close_time)} · ${this.result.latest.feature_names.length} active numeric inputs`;
     }
 
     renderValidation() {
       const validation = this.result.validation;
+      const market = this.loadedMarket || this.settings;
       document.getElementById("pfPredictionCount").textContent = `${validation.qualified} / ${validation.predictions}`;
       document.getElementById("pfHitRate").textContent = finite(validation.hit_rate_pct) ? `${validation.hit_rate_pct.toFixed(1)}%` : "N/A";
       document.getElementById("pfRankIc").textContent = finite(validation.rank_ic) ? validation.rank_ic.toFixed(3) : "N/A";
@@ -972,7 +1224,7 @@
       body.innerHTML = recent.map((signal) => {
         const color = signal.direction === "up" ? "#16a34a" : signal.direction === "down" ? "#dc2626" : "#64748b";
         const correct = signal.direction === signal.actual_direction;
-        return `<tr><td>${formatKst(signal.source_time + INTERVAL_SECONDS[this.settings.interval])}</td><td style="color:${color};font-weight:800;">${signal.direction.toUpperCase()}${signal.qualified ? "" : " · LOW"}</td><td>${(signal.confidence * 100).toFixed(1)}%</td><td>${signal.expected_bps >= 0 ? "+" : ""}${signal.expected_bps.toFixed(1)} bp</td><td>${signal.actual_bps >= 0 ? "+" : ""}${signal.actual_bps.toFixed(1)} bp</td><td style="color:${correct ? "#047857" : "#b91c1c"};font-weight:800;">${correct ? "MATCH" : "MISS"}</td></tr>`;
+        return `<tr><td>${formatKst(signal.source_time + INTERVAL_SECONDS[market.interval])}</td><td style="color:${color};font-weight:800;">${signal.direction.toUpperCase()}${signal.qualified ? "" : " · LOW"}</td><td>${(signal.confidence * 100).toFixed(1)}%</td><td>${signal.expected_bps >= 0 ? "+" : ""}${signal.expected_bps.toFixed(1)} bp</td><td>${signal.actual_bps >= 0 ? "+" : ""}${signal.actual_bps.toFixed(1)} bp</td><td style="color:${correct ? "#047857" : "#b91c1c"};font-weight:800;">${correct ? "MATCH" : "MISS"}</td></tr>`;
       }).join("") || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:18px;">No validation forecasts.</td></tr>';
     }
 
@@ -980,6 +1232,10 @@
       const host = document.getElementById("pfChartHost");
       if (!host || !this.chart) return;
       this.chart.applyOptions({ width: Math.max(320, host.clientWidth), height: Math.max(320, host.clientHeight) });
+      if (this.pendingFit && host.clientWidth > 0 && host.clientHeight > 0) {
+        this.chart.timeScale()?.fitContent();
+        this.pendingFit = false;
+      }
     }
 
     startPolling() {
@@ -1015,10 +1271,13 @@
   const instance = new PriceForecastTab();
   instance.DEFAULT_SETTINGS = DEFAULT_SETTINGS;
   instance.INTERVAL_SECONDS = INTERVAL_SECONDS;
+  instance.formatKst = formatKst;
+  instance.formatKstTick = formatKstTick;
   instance.normalizeSettings = normalizeSettings;
   instance.parseKlines = parseKlines;
   instance.buildFeatureRows = buildFeatureRows;
   instance.fitRidge = fitRidge;
+  instance.probabilityFromResiduals = probabilityFromResiduals;
   instance.forecastAtIndex = forecastAtIndex;
   instance.buildCausalForecast = buildCausalForecast;
   return instance;
